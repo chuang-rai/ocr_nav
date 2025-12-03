@@ -1,0 +1,62 @@
+[build-system]
+# Specifies the required build backend and its dependencies
+requires = ["setuptools>=80.9.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "ocr_nav"
+version = "0.0"
+authors = [
+    { name="Chenguang Huang", email="chuang@rai-inst.com" },
+]
+description = "Using OCR detection for localization and navigation"
+readme = "README.md"
+license-files = ["LICENSE"]
+keywords = ["OCR", "Navigation", "Language"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
+requires-python = ">=3.12"
+
+# Define your main runtime dependencies
+dependencies = [
+    "torch",
+    "torchvision",
+    "torchaudio",
+    "transformers",
+    "vllm",
+    "PyMuPDF",
+    "img2pdf",
+    "einops",
+    "easydict",
+    "addict ",
+    "Pillow",
+    "numpy",
+]
+
+[tool.setuptools.packages.find]
+where = ["ocr_nav"]
+
+# Define optional dependency groups (e.g., for development or documentation)
+[project.optional-dependencies]
+dev = [
+    "flake8",
+    "black",
+]
+
+[tool.black]
+line-length = 120
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.mypy_cache
+  | \.pytest_cache
+  | \.tox
+  | \.venv
+  | _build
+  | build
+  | dist
+)/
+'''
