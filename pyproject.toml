@@ -30,13 +30,16 @@ dependencies = [
     "img2pdf",
     "einops",
     "easydict",
-    "addict ",
+    "addict",
     "Pillow",
     "numpy",
+    "scipy",
+    "tqdm",
+    "pyvista",
 ]
 
 [tool.setuptools.packages.find]
-where = ["ocr_nav"]
+where = ["."]
 
 # Define optional dependency groups (e.g., for development or documentation)
 [project.optional-dependencies]

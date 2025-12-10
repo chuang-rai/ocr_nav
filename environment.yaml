@@ -20,5 +20,9 @@ dependencies:
       - addict 
       - Pillow
       - numpy
+      - opencv-python
+      - scipy
+      - tqdm
+      - pyvista
 
 prefix: /home/chuang/miniforge3/envs/ocr_nav

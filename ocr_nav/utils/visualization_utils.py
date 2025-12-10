@@ -1,5 +1,7 @@
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
+import open3d as o3d
+from typing import List, Tuple
 
 
 def extract_coordinates_and_label(ref_text, image_width, image_height):
@@ -80,3 +82,34 @@ def draw_bounding_boxes(image: Image.Image, refs, output_dir):
             continue
     img_draw.paste(overlay, (0, 0), overlay)
     return img_draw
+
+
+def draw_cube(center: np.ndarray, size: float = 0.05, color: List[float] = [0, 1, 0]) -> o3d.geometry.TriangleMesh:
+    cube = o3d.geometry.TriangleMesh.create_box(width=size, height=size, depth=size)
+    cube.paint_uniform_color(color)
+    cube.compute_vertex_normals()
+    cube.translate(center - np.array([size / 2, size / 2, size / 2]))
+    return cube
+
+
+def draw_coordinate(origin: np.ndarray, size: float = 0.1) -> o3d.geometry.TriangleMesh:
+    axis = o3d.geometry.TriangleMesh.create_coordinate_frame(size=size)
+    axis.translate(origin)
+    return axis
+
+
+def draw_line(
+    pos1: np.ndarray,
+    pos2: np.ndarray,
+    color: List[float] = [1, 0, 0],
+    thickness: float = 0.01,
+) -> o3d.geometry.LineSet:
+    # draw line between two points
+    points = [pos1, pos2]
+    lines = [[0, 1]]
+    colors = [color]
+    line_set = o3d.geometry.LineSet()
+    line_set.points = o3d.utility.Vector3dVector(points)
+    line_set.lines = o3d.utility.Vector2iVector(lines)
+    line_set.colors = o3d.utility.Vector3dVector(colors)
+    return line_set
