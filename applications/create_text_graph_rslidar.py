@@ -40,26 +40,27 @@ def main():
 
     intr_mat = load_intrinsics(root_dir / "intrinsics.txt")
     robosense2zed_left_mat_path = root_dir / "tf_robosense_e1r_to_zed_left_camera_optical_frame.txt"
-    tf_zed_left2rs = load_pose(robosense2zed_left_mat_path)
+    tf_rs2zed_left = load_pose(robosense2zed_left_mat_path)
     textmap = TextMap()
     for pi, p in enumerate(sorted(ocr_dir.iterdir())):
         print(f"Processing frame {pi}")
-        frame_id = int(p.stem[6:])
+        frame_id = int(p.stem.split("_")[-1])
 
         if pi == 0 or debug:
             image_path = root_dir / "left" / f"image_{frame_id}.jpg"
             img = load_image(image_path)
+            assert img is not None
             h, w, _ = np.array(img).shape
 
         pose_path = root_dir / "pose" / f"pose_{frame_id}.txt"
         depth_path = root_dir / "depth" / f"depth_{frame_id}.png"
         lidar_path = root_dir / "rslidar" / f"rslidar_{frame_id}.npy"
-        pose = load_pose(pose_path)
+        pose_np = load_pose(pose_path)
         pc_rs = load_lidar(lidar_path)  # (N, 3)
 
         # transform point cloud from robosense frame to zed left camera frame
         pc_rs_hom = np.hstack((pc_rs, np.ones((pc_rs.shape[0], 1))))  # (N, 4)
-        pc_hom_zed = tf_zed_left2rs @ pc_rs_hom.T
+        pc_hom_zed = tf_rs2zed_left @ pc_rs_hom.T
         pc_zed = pc_hom_zed[:3, :].T  # (N, 3)
 
         # project points to image plane
@@ -81,12 +82,13 @@ def main():
                         if 0 <= u + du < w and 0 <= v + dv < h:
                             img.putpixel((u + du, v + dv), tuple(depth_color[i]))
 
+            assert isinstance(debug_image_dir, Path)
             debug_image_path = debug_image_dir / f"lidar_proj_{frame_id}.png"
             img.save(debug_image_path)
 
         # add pose to the textmap
-        pc_world = (pose @ pc_hom_zed)[:3, :].T  # (N, 3)
-        pose_id = textmap.add_pose(pi, pose, lidar=pc_world)
+        pc_world = (pose_np @ pc_hom_zed)[:3, :].T  # (N, 3)
+        pose_id = textmap.add_pose(pi, pose_np, lidar=pc_world)
         if pi > 0:
             textmap.add_pose_edge(pi - 1, pi)
 
@@ -127,7 +129,7 @@ def main():
             cam2robot[:3, :3] = R.from_euler("xyz", [0, 0, 0], degrees=True).as_matrix()
             centroid_3d_hom = np.ones((4,))
             centroid_3d_hom[:3] = centroid_3d
-            centroid_3d_world_hom = pose @ centroid_3d_hom
+            centroid_3d_world_hom = pose_np @ centroid_3d_hom
             centroid_3d_world = centroid_3d_world_hom[:3] / centroid_3d_world_hom[3]
 
             most_similar_node_and_dist = textmap.find_similar_text(text, dist_threshold=2)
@@ -198,9 +200,10 @@ def main():
             pose_id = pose_node.pose_id
             cam_cube = draw_cube(pose_node.pose[:3, 3], size=0.5, color="blue")
             plotter.add_mesh(cam_cube, color=colormap[pose_id] / 255.0)
+            assert pose_node.lidar is not None
             if node == 0:
                 axis = draw_coordinate(pose_node.pose[:3, 3], size=2)
-                plotter.add_actor(axis)
+                plotter.add_actor(axis)  # type: ignore
                 plotter = draw_point_cloud(plotter, pose_node.lidar, point_size=2.0)
                 # plotter.add_mesh(axis)
             if node in {47, 59}:
@@ -210,10 +213,10 @@ def main():
             if textbag.pc is not None:
                 text = "/".join(list(textbag.text_dict.keys()))
                 point_3d = np.mean(textbag.pc, axis=0)  # take the average locations for visualization
-                sphere = draw_sphere(point_3d, radius=0.03, color="red")
-                plotter.add_mesh(sphere)
+                sphere = draw_sphere(point_3d, radius=0.03)
+                plotter.add_mesh(sphere, color="red")
 
-                text_actor = draw_text(text, point_3d, height=0.2, normal=(0, 1, 0))
+                text_actor = draw_text(text, point_3d, height=0.2, normal=np.array((0, 1, 0)))
                 plotter.add_mesh(text_actor, color="red")
     # label_dict = {}
     print("Start adding edges...")

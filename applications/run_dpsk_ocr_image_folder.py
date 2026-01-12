@@ -7,7 +7,7 @@ import time
 import argparse
 import torch
 
-if torch.version.cuda == "11.8":
+if torch.version.cuda == "11.8":  # type: ignore
     os.environ["TRITON_PTXAS_PATH"] = "/usr/local/cuda-11.8/bin/ptxas"
 
 os.environ["VLLM_USE_V1"] = "0"
@@ -86,7 +86,7 @@ async def stream_generate(image=None, prompt=""):
         request = {"prompt": prompt}
     else:
         assert False, f"prompt is none!!!"
-    async for request_output in engine.generate(request, sampling_params, request_id):
+    async for request_output in engine.generate(request, sampling_params, request_id):  # type: ignore
         if request_output.outputs:
             full_text = request_output.outputs[0].text
             new_text = full_text[printed_length:]
@@ -127,7 +127,9 @@ if __name__ == "__main__":
         start_time = time.time()
         image_name = image_path.stem
 
-        image = load_image(image_path).convert("RGB")
+        image = load_image(image_path)
+        assert image is not None
+        image = image.convert("RGB")
 
         if "<image>" in PROMPT:
 

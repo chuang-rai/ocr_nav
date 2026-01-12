@@ -23,4 +23,4 @@ def levenshtein_distance(str1: str, str2: str) -> int:
 
 
 def levenshtein_distance_batch(str_list1: List[str], str_list2: List[str]) -> List[int]:
-    pass
+    return []

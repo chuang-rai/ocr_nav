@@ -4,19 +4,19 @@ import open3d as o3d
 from typing import List, Tuple
 
 
-def extract_coordinates_and_label(ref_text, image_width, image_height):
+def extract_coordinates_and_label(ref_text) -> Tuple[str, List[List[float]]]:
 
     try:
         label_type = ref_text[1]
         cor_list = eval(ref_text[2])
     except Exception as e:
         print(e)
-        return None
+        raise
 
     return (label_type, cor_list)
 
 
-def draw_bounding_boxes(image: Image.Image, refs, output_dir):
+def draw_bounding_boxes(image: Image.Image, refs: List[Tuple[str, str, str]], output_dir: str) -> Image.Image:
 
     image_width, image_height = image.size
     img_draw = image.copy()
@@ -32,7 +32,7 @@ def draw_bounding_boxes(image: Image.Image, refs, output_dir):
 
     for i, ref in enumerate(refs):
         try:
-            result = extract_coordinates_and_label(ref, image_width, image_height)
+            result = extract_coordinates_and_label(ref)
             if result:
                 label_type, points_list = result
 
@@ -102,7 +102,6 @@ def draw_line(
     pos1: np.ndarray,
     pos2: np.ndarray,
     color: List[float] = [1, 0, 0],
-    thickness: float = 0.01,
 ) -> o3d.geometry.LineSet:
     # draw line between two points
     points = [pos1, pos2]

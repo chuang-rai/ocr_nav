@@ -48,7 +48,7 @@ def main():
 
         # voxel sampling
         global_pcd = global_pcd.voxel_down_sample(voxel_size=0.05)
-    o3d.visualization.draw_geometries([global_pcd])
+    o3d.visualization.draw_geometries([global_pcd])  # type: ignore
 
 
 if __name__ == "__main__":

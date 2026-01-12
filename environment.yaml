@@ -1,8 +1,10 @@
 name: ocr_nav
 channels:
   - conda-forge
+  - robostack-humble
 dependencies:
-  - python=3.12.9
+  - python=3.11
+  - ros-humble-desktop
   - pip
   - pip:
       - setuptools>=80.9.0
@@ -20,9 +22,9 @@ dependencies:
       - addict 
       - Pillow
       - numpy
-      - opencv-python
       - scipy
       - tqdm
       - pyvista
+      - plyfile
 
 prefix: /home/chuang/miniforge3/envs/ocr_nav

@@ -2,7 +2,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 import numpy as np
 from ocr_nav.utils.levenshtein_utils import levenshtein_distance
-from typing import List
+from typing import List, Optional
 import networkx as nx
 
 
@@ -10,20 +10,20 @@ import networkx as nx
 class Pose:
     pose_id: int
     pose: np.ndarray
-    lidar: np.ndarray = None  # (N, 3)
+    lidar: Optional[np.ndarray] = None  # (N, 3)
 
 
 @dataclass
 class TextBag:
-    text_dict: defaultdict[List]  # map from text to the frame id
-    pc: np.ndarray = None  # (N, 3)
+    text_dict: defaultdict[str, List[int]]  # map from text to the frame id
+    pc: Optional[np.ndarray] = None  # (N, 3)
 
 
 class TextMap:
     def __init__(self):
         self.G = nx.Graph()
 
-    def add_pose(self, pose_id: int, pose: np.ndarray, lidar: np.ndarray = None):
+    def add_pose(self, pose_id: int, pose: np.ndarray, lidar: Optional[np.ndarray] = None):
         p_node = Pose(pose_id, pose, lidar)
         self.G.add_node(pose_id, pose=p_node)
         return pose_id
@@ -31,8 +31,10 @@ class TextMap:
     def add_pose_edge(self, pose_id1: int, pose_id2: int):
         self.G.add_edge(pose_id1, pose_id2)
 
-    def add_text_to_pose(self, pose_id: int, text: str, pos_3d: np.ndarray = None):
-        new_text_node = TextBag(text_dict={text: [pose_id]}, pc=pos_3d.reshape((1, 3)) if pos_3d is not None else None)
+    def add_text_to_pose(self, pose_id: int, text: str, pos_3d: Optional[np.ndarray] = None):
+        text_dict = defaultdict(list)
+        text_dict[text] = [pose_id]
+        new_text_node = TextBag(text_dict=text_dict, pc=pos_3d.reshape((1, 3)) if pos_3d is not None else None)
         self.G.add_node(text, textbag=new_text_node)
         self.G.add_edge(pose_id, text)
         return text, new_text_node

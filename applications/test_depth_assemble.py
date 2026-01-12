@@ -15,10 +15,10 @@ from ocr_nav.utils.io_utils import load_pose, load_depth, load_intrinsics
 from ocr_nav.utils.mapping_utils import backproject_depth_map
 
 
-pose_dir = Path("/home/chuang/hcg/projects/ocr/data/giorgio_data/gtonetti_data_zurich_hb_3_merged_pose_zed_gen2_depth_fs_zurich_hb_3_5_bag_zurich_hb_3_5_2/pose")
+pose_dir = Path(
+    "/home/chuang/hcg/projects/ocr/data/giorgio_data/gtonetti_data_zurich_hb_3_merged_pose_zed_gen2_depth_fs_zurich_hb_3_5_bag_zurich_hb_3_5_2/pose"
+)
 root_dir = pose_dir.parent
-
-
 
 
 intr_mat = load_intrinsics(root_dir / "intrinsics.txt")
@@ -39,7 +39,7 @@ for pi, p in enumerate(sorted(pose_dir.iterdir())):
     ones = np.ones((points_3d_cam.shape[0], 1))
     points_3d_cam_hom = np.hstack((points_3d_cam, ones))
     points_3d_world_hom = (pose @ points_3d_cam_hom.T).T
-    points_3d_world = points_3d_world_hom[:, :3] # (N, 3)
+    points_3d_world = points_3d_world_hom[:, :3]  # (N, 3)
 
     # visualize it with open3d
     pcd = o3d.geometry.PointCloud()
@@ -48,5 +48,4 @@ for pi, p in enumerate(sorted(pose_dir.iterdir())):
     pcd = pcd.voxel_down_sample(voxel_size=0.05)
     # o3d.visualization.draw_geometries([pcd])
     pcd_list.append(pcd)
-o3d.visualization.draw_geometries(pcd_list)
-
+o3d.visualization.draw_geometries(pcd_list)  # type: ignore

@@ -4,7 +4,7 @@ from collections import defaultdict
 from typing import List, Tuple
 
 
-def re_match(text):
+def re_match(text: str):
     pattern = r"(<\|ref\|>(.*?)<\|/ref\|><\|det\|>(.*?)<\|/det\|>)"
     matches = re.findall(pattern, text, re.DOTALL)
 
@@ -18,14 +18,14 @@ def re_match(text):
     return matches, mathes_image, mathes_other
 
 
-def compute_text_freq(text_tuple_list: List[Tuple[str]]):
+def compute_text_freq(text_tuple_list: List[Tuple[str, str, str]]):
     text_freq_dict = defaultdict(int)
     for text_tuple in text_tuple_list:
         text_freq_dict[text_tuple[1]] += 1
     return text_freq_dict
 
 
-def select_points_in_bbox(pc_image_2d: np.ndarray, bbox: Tuple[int], pc_3d: np.ndarray) -> np.ndarray:
+def select_points_in_bbox(pc_image_2d: np.ndarray, bbox: List[int], pc_3d: np.ndarray) -> np.ndarray:
     x_min, y_min, x_max, y_max = bbox
     selected_indices = np.where(
         (pc_image_2d[:, 0] >= x_min)
