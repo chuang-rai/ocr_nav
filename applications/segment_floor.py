@@ -40,7 +40,7 @@ from ocr_nav.utils.pyvista_vis_utils import (
     create_plotter,
     convert_open3d_mesh_to_pyvista,
 )
-from ocr_nav.scene_graph.text_graph import TextMap, Pose, TextBag
+from code.ocr_nav.ocr_nav.scene_graph.pose_graph import PoseGraph, Pose, TextBag
 
 
 def main():

@@ -14,7 +14,7 @@ import cv2
 from sklearn.cluster import DBSCAN
 from scipy.spatial import Delaunay, Voronoi, voronoi_plot_2d
 from scipy.ndimage import binary_erosion
-from ocr_nav.scene_graph.text_graph import TextMap
+from ocr_nav.ocr_nav.scene_graph.pose_graph import PoseGraph
 from ocr_nav.utils.mapping_utils import project_points, downsample_point_cloud, points_to_mesh, segment_floor
 from ocr_nav.utils.io_utils import (
     load_livox_poses_timestamps,
@@ -26,12 +26,17 @@ from typing import Tuple
 
 class GroundMesh:
     def __init__(self, voxel_size: float = 0.1):
-        self.textmap = TextMap()
+        self.textmap = PoseGraph()
         self.cell_size = voxel_size
         self.voronoi_graphs = {}
 
     def build_ground_mesh_with_folder(
-        self, folderio: FolderIO, filter_obs: bool = True, debug: bool = False, vis: bool = False
+        self,
+        folderio: FolderIO,
+        filter_obs: bool = True,
+        obstacle_height_range: Tuple[float, float] = (0.6, 2.7),
+        debug: bool = False,
+        vis: bool = False,
     ) -> None:
         if debug:
             debug_image_dir = folderio.root_dir / "debug_lidar_proj"
@@ -161,8 +166,8 @@ class GroundMesh:
                 self.ground_pc_rs,
                 np.array(heights),
                 voxel_res=self.cell_size,
-                high_threshold=2.7,
-                low_threshold=0.6,
+                high_threshold=obstacle_height_range[1],
+                low_threshold=obstacle_height_range[0],
                 vis=vis,
             )
             self.ground_pc_rs = o3d.geometry.PointCloud()

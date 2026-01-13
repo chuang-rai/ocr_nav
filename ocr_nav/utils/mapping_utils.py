@@ -7,6 +7,16 @@ from typing import Tuple, Union, List
 
 
 def backproject_point(depth: np.ndarray, intrinsics: np.ndarray, u: int, v: int) -> np.ndarray:
+    """Backproject a single pixel with a depth image
+
+    Args:
+        depth (np.ndarray): (H, W) depth image.
+        intrinsics (np.ndarray): (3, 3) Camera intrinsics.
+        u (int): Pixel x-coordinate.
+        v (int): Pixel y-coordinate.
+    Returns:
+        np.ndarray: (3,) 3D point in camera coordinates.
+    """
     z = depth[v, u]
     x = (u - intrinsics[0, 2]) * z / intrinsics[0, 0]
     y = (v - intrinsics[1, 2]) * z / intrinsics[1, 1]
@@ -14,6 +24,15 @@ def backproject_point(depth: np.ndarray, intrinsics: np.ndarray, u: int, v: int)
 
 
 def backproject_depth_map(depth: np.ndarray, intrinsics: np.ndarray) -> np.ndarray:
+    """Backproject all pixels in the depth image.
+
+    Args:
+        depth (np.ndarray): (H, W) depth image.
+        intrinsics (np.ndarray): (3, 3) Camera intrinsics.
+
+    Returns:
+        np.ndarray: (N, 3) 3D points in camera coordinates.
+    """
     h, w = depth.shape
     i_coords = np.arange(w)
     j_coords = np.arange(h)
@@ -28,19 +47,16 @@ def backproject_depth_map(depth: np.ndarray, intrinsics: np.ndarray) -> np.ndarr
 
 
 def project_points(pc: np.ndarray, intrinsics: np.ndarray, w: int, h: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Docstring for project_points
+    """Project 3D points to 2D image plane.
 
-    :param pc: (N, 3)
-    :type pc: np.ndarray
-    :param intrinsics: (3, 3)
-    :type intrinsics: np.ndarray
-    :return: 2D points (N, 2)
-    :rtype: ndarray float
-    :return: depth (N,)
-    :rtype: ndarray float
-    :return: 3D points (N, 3)
-    :rtype: ndarray float
+    Args:
+        pc (np.ndarray): (N, 3) 3D points.
+        intrinsics (np.ndarray): (3, 3) Camera intrinsics.
+        w (int): Image width.
+        h (int): Image height.
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray, np.ndarray]: (N, 2) 2D projected points, (N,) depth values, (N, 3) filtered 3D points.
     """
     # filter points behind the camera
     pc = pc[pc[:, 2] > 0]
@@ -57,15 +73,14 @@ def project_points(pc: np.ndarray, intrinsics: np.ndarray, w: int, h: int) -> Tu
 def downsample_point_cloud(
     pc: Union[np.ndarray, o3d.geometry.PointCloud], voxel_size: float = 0.05
 ) -> o3d.geometry.PointCloud:
-    """
-    Docstring for downsample_point_cloud
+    """Apply voxel downsampling to a point cloud.
 
-    :param pc: (N, 3)
-    :type pc: np.ndarray
-    :param voxel_size: voxel size for downsampling
-    :type voxel_size: float
-    :return: downsampled point cloud
-    :rtype: o3d.geometry.PointCloud
+    Args:
+        pc (Union[np.ndarray, o3d.geometry.PointCloud]): (N, 3) point cloud or Open3D PointCloud object.
+        voxel_size (float, optional): voxel size for downsampling. Defaults to 0.05.
+
+    Returns:
+        o3d.geometry.PointCloud: Downsampled point cloud.
     """
     if isinstance(pc, np.ndarray):
         pcd = o3d.geometry.PointCloud()
@@ -79,15 +94,14 @@ def downsample_point_cloud(
 def points_to_mesh(
     pc: Union[np.ndarray, o3d.geometry.PointCloud], voxel_size: float = 0.05
 ) -> o3d.geometry.TriangleMesh:
-    """
-    Docstring for points_to_mesh
+    """Create a mesh with the point cloud based on ball pivoting algorithm.
 
-    :param pc: (N, 3)
-    :type pc: np.ndarray
-    :param voxel_size: voxel size for downsampling
-    :type voxel_size: float
-    :return: mesh
-    :rtype: o3d.geometry.TriangleMesh
+    Args:
+        pc (Union[np.ndarray, o3d.geometry.PointCloud]): (N, 3) point cloud or Open3D PointCloud object.
+        voxel_size (float, optional): The voxel size for mesh generation. Defaults to 0.05.
+
+    Returns:
+        o3d.geometry.TriangleMesh: Generated mesh.
     """
     if isinstance(pc, np.ndarray):
         pcd = o3d.geometry.PointCloud()
@@ -95,7 +109,6 @@ def points_to_mesh(
     else:
         pcd = pc
     pcd.estimate_normals()
-    # mesh, density = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(pcd, depth=8)
 
     mean_distance = pcd.compute_nearest_neighbor_distance()
     voxel_size = voxel_size if voxel_size is not None else mean_distance.mean()
@@ -104,12 +117,20 @@ def points_to_mesh(
         pcd, o3d.utility.DoubleVector([radius, 2 * radius])
     )
 
-    # mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(pcd, alpha=voxel_size)
-
     return mesh
 
 
 def segment_floor(pc: np.ndarray, resolution: float = 0.05, vis: bool = False) -> np.ndarray:
+    """Segment floor heights from a point cloud based on histogram analysis.
+
+    Args:
+        pc (np.ndarray): (N, 3) point cloud.
+        resolution (float, optional): Resolution for histogram bins. Defaults to 0.05.
+        vis (bool, optional): Whether to visualize the histogram and detected peaks. Defaults to False.
+
+    Returns:
+        np.ndarray: Detected floor heights.
+    """
 
     z = pc[:, 2]
     bins_num = (np.max(z) - np.min(z)) / resolution

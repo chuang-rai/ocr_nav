@@ -39,7 +39,7 @@ from ocr_nav.utils.pyvista_vis_utils import (
     create_plotter,
     convert_open3d_mesh_to_pyvista,
 )
-from ocr_nav.scene_graph.text_graph import TextMap, Pose, TextBag
+from code.ocr_nav.ocr_nav.scene_graph.pose_graph import PoseGraph, Pose, TextBag
 
 
 def select_points_in_masks(
@@ -146,7 +146,7 @@ def main():
     livox_poses, livox_timestamps = load_livox_poses_timestamps(livox_poses_timestamps_path)
     print(f"Loaded livox poses and timestamps.{livox_timestamps.shape}")
 
-    textmap = TextMap()
+    textmap = PoseGraph()
     ground_pc = o3d.geometry.PointCloud()
     ground_pc_rs = o3d.geometry.PointCloud()
     full_pc_rs = o3d.geometry.PointCloud()

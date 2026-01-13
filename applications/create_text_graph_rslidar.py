@@ -25,7 +25,7 @@ from ocr_nav.utils.pyvista_vis_utils import (
     draw_coordinate,
     create_plotter,
 )
-from ocr_nav.scene_graph.text_graph import TextMap, Pose, TextBag
+from code.ocr_nav.ocr_nav.scene_graph.pose_graph import PoseGraph, Pose, TextBag
 
 
 def main():
@@ -41,7 +41,7 @@ def main():
     intr_mat = load_intrinsics(root_dir / "intrinsics.txt")
     robosense2zed_left_mat_path = root_dir / "tf_robosense_e1r_to_zed_left_camera_optical_frame.txt"
     tf_rs2zed_left = load_pose(robosense2zed_left_mat_path)
-    textmap = TextMap()
+    textmap = PoseGraph()
     for pi, p in enumerate(sorted(ocr_dir.iterdir())):
         print(f"Processing frame {pi}")
         frame_id = int(p.stem.split("_")[-1])

@@ -19,7 +19,7 @@ class TextBag:
     pc: Optional[np.ndarray] = None  # (N, 3)
 
 
-class TextMap:
+class PoseGraph:
     def __init__(self):
         self.G = nx.Graph()
 

@@ -8,7 +8,6 @@ from typing import List, Tuple, Union
 
 
 def load_image(image_path: Path) -> Image.Image:
-
     image = Image.open(image_path)
     corrected_image = ImageOps.exif_transpose(image)
     return corrected_image
@@ -21,7 +20,17 @@ def load_depth(depth_path: Path) -> np.ndarray:
     return depth
 
 
-def load_intrinsics(intrinsics_path: Path):
+def load_intrinsics(intrinsics_path: Path) -> np.ndarray:
+    """Load the camera intrinsics from a text file. The content in the file
+    is expected to be in the format:
+    fx, 0, cx, 0, fy, cy, 0, 0, 1
+
+    Args:
+        intrinsics_path (Path): Path to the intrinsics file.
+
+    Returns:
+        np.ndarray: (3, 3) Camera intrinsics matrix.
+    """
     with open(intrinsics_path, "r") as f:
         line = f.readline()
         line = [float(x.strip()) for x in line.strip().split(",")]
@@ -32,6 +41,17 @@ def load_intrinsics(intrinsics_path: Path):
 
 
 def load_pose(pose_path: Path) -> np.ndarray:
+    """Load the 6DOF pose from a txt file. The content of the file
+    is expected to be in the format:
+    tx, ty, tz, qx, qy, qz, qw
+
+
+    Args:
+        pose_path (Path): Path to the pose file.
+
+    Returns:
+        np.ndarray: (4, 4) Pose matrix.
+    """
     with open(pose_path, "r") as f:
         line = f.readline()
         line = [float(x) for x in line.strip().split()]
@@ -44,18 +64,30 @@ def load_pose(pose_path: Path) -> np.ndarray:
 
 
 def load_lidar(lidar_path: Path) -> np.ndarray:
-    """
-    Docstring for load_lidar
+    """Load the lidar point cloud from a numpy file. The content of the file
+    is expected to be in the format:
+    (N, 3) array of point coordinates.
 
-    :param lidar_path: lidar path
-    :type lidar_path: Path
-    :return: (N, 3)
-    :rtype: ndarray
+    Args:
+        lidar_path (Path): Path to the lidar .npy file.
+
+    Returns:
+        np.ndarray: (N, 3) Lidar point cloud.
     """
     return np.load(lidar_path)
 
 
 def load_livox_poses_timestamps(poses_path: Path) -> Tuple[np.ndarray, np.ndarray]:
+    """Load the Livox poses and corresponding timestamps from an npy file.
+    Each row in the array is expected to be:
+    (tx, ty, tz, qx, qy, qz, qw, timestamp)
+
+    Args:
+        poses_path (Path): Path to the poses .npy file.
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: Tuple containing an array of poses (N, 4, 4) and an array of timestamps (N,).
+    """
     poses = []
     poses_and_timestamps = np.load(poses_path)
     for line in poses_and_timestamps:
@@ -68,11 +100,30 @@ def load_livox_poses_timestamps(poses_path: Path) -> Tuple[np.ndarray, np.ndarra
 
 
 def load_masks(masks_path: Path) -> np.ndarray:
+    """Load the segmentation mask of a certain object from an npy file.
+    The content of the file is expected to be: an (H, W) numpy array
+
+    Args:
+        masks_path (Path): Path to the masks .npy file.
+
+    Returns:
+        np.ndarray: (H, W) Segmentation mask.
+    """
     masks = np.load(masks_path)
     return masks
 
 
 def find_closest(sorted_arr: np.ndarray, target: float) -> int:
+    """Find the index of the closest value to the target in a sorted array.
+
+    Args:
+        sorted_arr (np.ndarray): Sorted array of values.
+        target (float): Target value to find the closest to.
+
+    Returns:
+        int: Index of the closest value in the array.
+    """
+
     # Find the index where 'target' would be inserted to maintain order
     idx = np.searchsorted(sorted_arr, target)
 
@@ -97,6 +148,16 @@ def find_closest(sorted_arr: np.ndarray, target: float) -> int:
 def search_latest_poses_within_timestamp_range(
     poses: np.ndarray, timestamps: np.ndarray, start_timestamp_sec_nano: str
 ) -> Union[Tuple[np.ndarray, np.int64], Tuple[None, None]]:
+    """Search for the latest pose within a given timestamp range.
+
+    Args:
+        poses (np.ndarray): a list of poses (N, 4, 4)
+        timestamps (np.ndarray): a list of timestamps (N,)
+        start_timestamp_sec_nano (str): Start timestamp in the format "seconds_nanoseconds".
+
+    Returns:
+        Union[Tuple[np.ndarray, np.int64], Tuple[None, None]]: Tuple containing the latest pose and its timestamp, or (None, None) if not found.
+    """
     ids = np.argsort(timestamps)
     sorted_timestamps = timestamps[ids]
     sorted_poses = poses[ids]
@@ -119,6 +180,27 @@ def load_ply_point_cloud(ply_path: Path) -> np.ndarray:
 
 
 class FolderIO:
+    """Class to handle I/O operations for a folder containing various sensor data.
+    The folder structure is expected to be:
+    root_dir/
+        left/                # images
+            image_*.jpg
+        pose/                # camera poses
+            pose_*.txt
+        depth/               # depth maps
+            depth_*.png
+        livox/              # livox point clouds
+            livox_*.npy
+        rslidar/            # rslidar point clouds
+            rslidar_*.npy
+        masks_sam2_s/       # segmentation masks
+            mask_*.npy
+        intrinsics.txt      # camera intrinsics
+        tf_livox_mid360_to_zed_left_camera_optical_frame.txt
+        tf_robosense_e1r_to_zed_left_camera_optical_frame.txt
+    The timestamps in filenames of different sensorsare expected to align with each other.
+    """
+
     def __init__(
         self,
         root_dir: Path,
@@ -138,18 +220,7 @@ class FolderIO:
         self.mask_dir = root_dir / mask_name
 
         self.timestamp_list = ["_".join(x.stem.split("_")[-2:]) for x in sorted(self.img_dir.iterdir())]
-        # check if there are timestamps mismatches between files in different sensors' folders
         self.len = len(self.timestamp_list)
-        # if camera_pose_name != "":
-        #     assert self.check_timestamp_consistency(self.camera_pose_dir)
-        # if depth_name != "":
-        #     assert self.check_timestamp_consistency(self.depth_dir)
-        # if livox_name != "":
-        #     assert self.check_timestamp_consistency(self.livox_dir)
-        # if rslidar_name != "":
-        #     assert self.check_timestamp_consistency(self.rslidar_dir)
-        # if mask_name != "":
-        #     assert self.check_timestamp_consistency(self.mask_dir)
 
     def check_timestamp_consistency(self, folder: Path) -> bool:
         assert hasattr(self, "timestamp_list"), "FolderIO not initialized properly."

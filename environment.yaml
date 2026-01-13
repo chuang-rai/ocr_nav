@@ -26,5 +26,6 @@ dependencies:
       - tqdm
       - pyvista
       - plyfile
+      - open3d
 
 prefix: /home/chuang/miniforge3/envs/ocr_nav
