@@ -7,7 +7,7 @@ from rclpy.node import Node
 import numpy as np
 from typing import List
 
-from ocr_nav.scene_graph.ground_mesh import GroundMesh
+from ocr_nav.scene_graph.floor_graph import FloorGraph
 
 
 def draw_cube(
@@ -81,7 +81,7 @@ def main():
         # "/home/chuang/hcg/projects/ocr/data/Flexoffice_extracted/rosbag2_2025_12_10-10_25_57_perception_suite"
         "/home/chuang/hcg/projects/ocr/data/eth_extracted_sync/rosbag2_2025_12_16-17_09_00_perception_suite"
     )
-    fused_graph = GroundMesh.load_voronoi_graph(root_path / "ground_fused_graph.json")
+    fused_graph = FloorGraph.load_floor_graph(root_path / "ground_fused_graph.json")
     marker_array = MarkerArray()
     print("Plotting voronoi graphs...")
     marker_id = 0

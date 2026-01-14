@@ -1,51 +1,68 @@
-import os
 import json
 from pathlib import Path
-import copy
-import time
 import numpy as np
 import networkx as nx
 from tqdm import tqdm
+import cv2
 import open3d as o3d
 import matplotlib.pyplot as plt
 from scipy.signal import find_peaks
 from scipy.spatial.distance import cdist
-import cv2
 from sklearn.cluster import DBSCAN
-from scipy.spatial import Delaunay, Voronoi, voronoi_plot_2d
-from scipy.ndimage import binary_erosion
-from ocr_nav.ocr_nav.scene_graph.pose_graph import PoseGraph
-from ocr_nav.utils.mapping_utils import project_points, downsample_point_cloud, points_to_mesh, segment_floor
+from scipy.spatial import Voronoi
+from scipy.ndimage import binary_erosion, binary_closing
+from ocr_nav.scene_graph.pose_graph import PoseGraph
+from ocr_nav.utils.mapping_utils import (
+    project_points,
+    segment_floor,
+    select_points_in_masks,
+    select_points_near_heights,
+    transform_point_cloud,
+    to_o3d_pc,
+    get_largest_region,
+)
 from ocr_nav.utils.io_utils import (
     load_livox_poses_timestamps,
     search_latest_poses_within_timestamp_range,
     FolderIO,
 )
-from typing import Tuple
+from typing import List, Tuple
 
 
-class GroundMesh:
+class FloorGraph:
+    """Class for building a traversable floor graph for a building incrementally
+    with data recorded with Perception-Suite.  It assumes rgb image, segmentation
+    mask of the ground for each image, Livox Lidar, RoboSense Lidar, pose
+    of Livox Lidar, camera intrinsics, camera-Livox extrinsics, and
+    camera-RoboSense extrinsics are available.
+
+    Attributes:
+    pose_graph: PoseGraph object storing the pose nodes and edges.
+    cell_size: voxel size for downsampling the ground point cloud.
+    voronoi_graphs: dict mapping from floor id to its Voronoi graph.
+    """
+
     def __init__(self, voxel_size: float = 0.1):
-        self.textmap = PoseGraph()
+        self.pose_graph = PoseGraph()
         self.cell_size = voxel_size
         self.voronoi_graphs = {}
 
-    def build_ground_mesh_with_folder(
+    def build_floor_graph_with_folder(
         self,
         folderio: FolderIO,
-        filter_obs: bool = True,
+        floor_seg_resolution: float = 0.05,
         obstacle_height_range: Tuple[float, float] = (0.6, 2.7),
-        debug: bool = False,
+        sample_rate: int = 10,
         vis: bool = False,
     ) -> None:
-        if debug:
-            debug_image_dir = folderio.root_dir / "debug_lidar_proj"
-            debug_image_dir.mkdir(exist_ok=True)
 
         # load intrinsics
         intr_mat = folderio.get_intrinsics()
 
         # load some static transforms
+        # the naming convention: tf_source2target means tf that can transform
+        # points from source frame to target frame
+        # pc_target_frame_homo = tf_source2target @ pc_source_frame_homo
         tf_livox2zed_left = folderio.get_livox2left_camera_tf()
         tf_zed_left2livox = np.linalg.inv(tf_livox2zed_left)
         tf_rs2zed_left = folderio.get_rslidar2left_camera_tf()
@@ -54,21 +71,24 @@ class GroundMesh:
         # load livox poses and timestamps of glim results
         livox_poses, livox_timestamps = load_livox_poses_timestamps(livox_poses_timestamps_path)
 
-        ground_pc = o3d.geometry.PointCloud()
-        ground_pc_rs = o3d.geometry.PointCloud()
+        full_ground_pc_livox = o3d.geometry.PointCloud()
+        full_ground_pc_rs = o3d.geometry.PointCloud()
         self.full_pc_rs = o3d.geometry.PointCloud()
         self.full_pc_livox = o3d.geometry.PointCloud()
         self.pose_list = []
         pbar = tqdm(enumerate(folderio.timestamp_list), total=folderio.len)
         last_pi = -1
+        # Go through the data stream to construct full point clouds of the ground from
+        # different LiDAR source (Livox, RoboSense), and build the pose graph
         for pi, p in pbar:
-            if pi % 10 != 0:
+            if pi % sample_rate != 0:
                 continue
 
             pbar.set_description(f"Processing frame {pi}")
             frame_id = p
 
-            if pi == 0 or debug:
+            # get image size
+            if pi == 0:
                 img = folderio.get_image(pi)
                 h, w, _ = np.array(img).shape
 
@@ -76,7 +96,7 @@ class GroundMesh:
             pc_livox = folderio.get_livox(pi)  # (N, 3)
             pc_rslidar = folderio.get_rslidar(pi)  # (N, 3)
 
-            # transform point cloud from robosense frame to zed left camera frame
+            # load livox poses computed with glim
             livox_pose, livox_timestamp = search_latest_poses_within_timestamp_range(
                 livox_poses,
                 livox_timestamps,
@@ -88,137 +108,100 @@ class GroundMesh:
 
             self.pose_list.append(livox_pose)
 
-            pc_livox_hom = np.hstack((pc_livox, np.ones((pc_livox.shape[0], 1))))  # (N, 4)
-            pc_hom_zed = tf_livox2zed_left @ pc_livox_hom.T
-            pc_zed = pc_hom_zed[:3, :].T  # (N, 3)
-
-            pc_rslidar_hom = np.hstack((pc_rslidar, np.ones((pc_rslidar.shape[0], 1))))  # (N, 4)
-            pc_rs_hom_zed = tf_rs2zed_left @ pc_rslidar_hom.T
-            pc_rs_zed = pc_rs_hom_zed[:3, :].T  # (N, 3)
+            # transform point cloud from robosense/livox frames to zed left camera frame
+            pc_livox_in_zed_frame = transform_point_cloud(pc_livox, tf_livox2zed_left)  # (N, 3)
+            pc_rslidar_in_zed_frame = transform_point_cloud(pc_rslidar, tf_rs2zed_left)  # (N, 3)
 
             # project points to image plane
-            pc_image_2d, pc_image_2d_depth, pc_image_3d = project_points(pc_zed, intr_mat, w, h)  # (N, 2)
-            pc_rs_image_2d, pc_rs_image_2d_depth, pc_rs_image_3d = project_points(pc_rs_zed, intr_mat, w, h)  # (N, 2)
+            pc_livox_image_2d, pc_livox_image_2d_depth, filtered_pc_livox_in_zed_frame = project_points(
+                pc_livox_in_zed_frame, intr_mat, w, h
+            )  # (N, 2), (N,), (N, 3)
+            pc_rs_image_2d, pc_rs_image_2d_depth, filtered_pc_rslidar_in_zed_frame = project_points(
+                pc_rslidar_in_zed_frame, intr_mat, w, h
+            )  # (N, 2), (N,), (N, 3)
 
-            if debug:
-                depth_scale = (pc_image_2d_depth - np.min(pc_image_2d_depth)) / (
-                    np.max(pc_image_2d_depth) - np.min(pc_image_2d_depth)
-                ).reshape((-1, 1))
-                depth_scale_gray = (depth_scale * 255).astype(np.uint8)
-                # get depth color map jet
-                depth_color = cv2.applyColorMap(depth_scale_gray, cv2.COLORMAP_JET)[0]  # (N, 3)
-                for i in range(pc_image_2d.shape[0]):
-                    u, v = int(pc_image_2d[i, 0]), int(pc_image_2d[i, 1])
-                    # img.putpixel((u, v), tuple(depth_color[i]))
-                    # draw a small circle at the projected point
-                    for du in range(-2, 3):
-                        for dv in range(-2, 3):
-                            if 0 <= u + du < w and 0 <= v + dv < h:
-                                img.putpixel((u + du, v + dv), tuple(depth_color[i]))
-
-                assert isinstance(debug_image_dir, Path)
-                debug_image_path = debug_image_dir / f"lidar_proj_{frame_id}.png"
-                img.save(debug_image_path)
-
+            # Select Livox ground points using segmentation masks
             ground_mask = masks[0][0]
-            pc_o3d = self.select_points_in_masks(
-                ground_mask, pc_image_2d, pc_image_3d, transform=livox_pose @ tf_zed_left2livox
-            )
-            ground_pc += pc_o3d
-            pc_o3d_rs = self.select_points_in_masks(
-                ground_mask,
-                pc_rs_image_2d,
-                pc_rs_image_3d,
-                transform=livox_pose @ tf_zed_left2livox,
-            )
-            ground_pc_rs += pc_o3d_rs
+            ground_pc_livox_o3d = select_points_in_masks(ground_mask, pc_livox_image_2d, filtered_pc_livox_in_zed_frame)
+            ground_pc_livox_o3d = ground_pc_livox_o3d.transform(livox_pose @ tf_zed_left2livox)
+            full_ground_pc_livox += ground_pc_livox_o3d
 
-            pc_o3d_livox_full_np = self.transform_point_cloud(pc_zed, livox_pose @ tf_zed_left2livox)
-            pc_o3d_livox_full = o3d.geometry.PointCloud()
-            pc_o3d_livox_full.points = o3d.utility.Vector3dVector(pc_o3d_livox_full_np)
-            self.full_pc_livox += pc_o3d_livox_full
+            # Select RoboSense ground points using segmentation masks
+            ground_pc_rs_o3d = select_points_in_masks(ground_mask, pc_rs_image_2d, filtered_pc_rslidar_in_zed_frame)
+            ground_pc_rs_o3d = ground_pc_rs_o3d.transform(livox_pose @ tf_zed_left2livox)
+            full_ground_pc_rs += ground_pc_rs_o3d
 
-            pc_o3d_rs_full_np = self.transform_point_cloud(pc_rs_image_3d, livox_pose @ tf_zed_left2livox)
-            pc_o3d_rs_full = o3d.geometry.PointCloud()
-            pc_o3d_rs_full.points = o3d.utility.Vector3dVector(pc_o3d_rs_full_np)
-            self.full_pc_rs += pc_o3d_rs_full
+            # Accumulate full Livox point clouds
+            pc_livox_world_np = transform_point_cloud(filtered_pc_livox_in_zed_frame, livox_pose @ tf_zed_left2livox)
+            pc_livox_world_o3d = to_o3d_pc(pc_livox_world_np)
+            self.full_pc_livox += pc_livox_world_o3d
 
-            pose_id = self.textmap.add_pose(pi, livox_pose, lidar=pc_o3d_rs_full)
-            if last_pi != -1 and self.textmap.G.has_node(last_pi):
-                self.textmap.add_pose_edge(last_pi, pi)
+            # Accumulate full RoboSense point clouds
+            pc_rs_world_np = transform_point_cloud(filtered_pc_rslidar_in_zed_frame, livox_pose @ tf_zed_left2livox)
+            pc_rs_world_o3d = to_o3d_pc(pc_rs_world_np)
+            self.full_pc_rs += pc_rs_world_o3d
+
+            # Add pose node to the pose graph
+            pose_id = self.pose_graph.add_pose(pi, livox_pose, lidar=pc_rs_world_o3d)
+            if last_pi != -1 and self.pose_graph.G.has_node(last_pi):
+                self.pose_graph.add_pose_edge(last_pi, pi)
 
             last_pi = pi
-            # add pose to the textmap
-            pc_world = (livox_pose @ tf_zed_left2livox @ pc_hom_zed)[:3, :].T  # (N, 3)
 
-        heights = segment_floor(np.array(ground_pc.points), resolution=0.05, vis=vis)
-        ground_pc_rs_numpy_list = self.select_points_near_heights(
-            np.array((ground_pc + ground_pc_rs).points), heights, threshold=0.2
+        heights = segment_floor(np.array(full_ground_pc_livox.points), resolution=floor_seg_resolution, vis=vis)
+        full_ground_pc_numpy_list = select_points_near_heights(
+            np.array((full_ground_pc_livox + full_ground_pc_rs).points), heights, threshold=0.2
         )
-        ground_pc_rs_numpy = np.vstack(ground_pc_rs_numpy_list)
-        self.ground_pc_rs = o3d.geometry.PointCloud()
-        self.ground_pc_rs.points = o3d.utility.Vector3dVector(ground_pc_rs_numpy)
-        self.ground_pc_rs = self.ground_pc_rs.voxel_down_sample(voxel_size=self.cell_size)
+        full_ground_pc_np = np.vstack(full_ground_pc_numpy_list)  # (N, 3)
+        self.full_ground_pc = to_o3d_pc(full_ground_pc_np)
+        self.full_ground_pc = self.full_ground_pc.voxel_down_sample(voxel_size=self.cell_size)
 
-        if filter_obs:
-            ground_pc_rs_numpy = self.filter_ground_points_with_obstacles_in_height_range(
-                self.full_pc_livox,
-                self.ground_pc_rs,
-                np.array(heights),
-                voxel_res=self.cell_size,
-                high_threshold=obstacle_height_range[1],
-                low_threshold=obstacle_height_range[0],
-                vis=vis,
-            )
-            self.ground_pc_rs = o3d.geometry.PointCloud()
-            self.ground_pc_rs.points = o3d.utility.Vector3dVector(ground_pc_rs_numpy)
+        fused_floor_graph, full_ground_pc_np = self.build_connected_floor_voronois(
+            self.full_pc_livox,
+            self.full_ground_pc,
+            np.array(heights),
+            voxel_res=self.cell_size,
+            high_threshold=obstacle_height_range[1],
+            low_threshold=obstacle_height_range[0],
+            vis=vis,
+        )
+        self.full_ground_pc = to_o3d_pc(full_ground_pc_np)
 
     @staticmethod
-    def save_voronoi_graph(graph: nx.Graph, graph_path: Path) -> None:
-        """Save the Voronoi graph to a json file.
+    def save_floor_graph(graph: nx.Graph, graph_path: Path) -> None:
+        """Save the floor graph to a json file.
 
         Args:
-            graph (nx.Graph): The Voronoi graph.
-            floor_dir (str): The directory where the intermediate results are stored.
-            name (str): The name of the file.
+            graph (nx.Graph): The floor graph.
+            graph_path (Path): The path where the graph will be saved.
         """
         graph_json = nx.node_link_data(graph)
         with open(graph_path, "w") as f:
             json.dump(graph_json, f, indent=4)
 
     @staticmethod
-    def load_voronoi_graph(graph_path: Path):
+    def load_floor_graph(graph_path: Path) -> nx.Graph:
+        """Load the floor graph saved as a json file.
+
+        Args:
+            graph_path (Path): The path to the graph json file.
+
+        Returns:
+            nx.Graph: The loaded floor graph.
+        """
         with open(graph_path, "r") as f:
             graph_json = json.load(f)
         graph = nx.node_link_graph(graph_json)
         return graph
 
-    def select_points_in_masks(
-        self, mask: np.ndarray, pc_image_2d: np.ndarray, pc_image_3d: np.ndarray, transform: np.ndarray = np.eye(4)
-    ) -> o3d.geometry.PointCloud:
-        valid_indices = np.where(mask[pc_image_2d[:, 1].astype(int), pc_image_2d[:, 0].astype(int)] > 0)[0]
-        ground_pc_image_3d = pc_image_3d[valid_indices, :]  # (K, 3)
-        ground_pc_world = self.transform_point_cloud(ground_pc_image_3d, transform)
-        # ground_pc_image_3d_hom = np.hstack((ground_pc_image_3d, np.ones((ground_pc_image_3d.shape[0], 1))))  # (K, 4)
-        # ground_pc_world = (transform @ ground_pc_image_3d_hom.T).T[:, :3]  # (K, 3)
-        pc_o3d = o3d.geometry.PointCloud()
-        pc_o3d.points = o3d.utility.Vector3dVector(ground_pc_world)
-        return pc_o3d
-
-    def transform_point_cloud(self, pc: np.ndarray, transform: np.ndarray) -> np.ndarray:
-        pc_hom = np.hstack((pc, np.ones((pc.shape[0], 1))))  # (N, 4)
-        pc_transformed_hom = (transform @ pc_hom.T).T
-        return pc_transformed_hom[:, :3]
-
-    def select_points_near_heights(self, pc: np.ndarray, heights: np.ndarray, threshold: float = 0.05) -> np.ndarray:
-        mask = np.zeros(pc.shape[0], dtype=bool)
-        pc_list = []
-        for h in heights:
-            mask = (pc[:, 2] >= h - threshold) & (pc[:, 2] <= h + threshold)
-            pc_list.append(pc[mask, :])
-        return pc_list
-
     def compute_grid_parameters(self, full_pc: o3d.geometry.PointCloud, voxel_res: float = 0.05) -> None:
+        """Given a point cloud of the whole scene, compute the voxel grid
+        boundaries as well as the assignment of points to grid id.
+
+        Args:
+            full_pc (o3d.geometry.PointCloud): Full point cloud of the scene.
+            voxel_res (float, optional): Voxel resolution. Defaults to 0.05.
+        """
         self.min_bound, self.max_bound = full_pc.get_min_bound(), full_pc.get_max_bound()
         self.in_bound = self.min_bound + np.array([0, 0, -1.0])
         self.full_voxel_grid = np.round((np.array(full_pc.points) - self.min_bound) / voxel_res)
@@ -228,7 +211,7 @@ class GroundMesh:
             np.max(self.full_voxel_grid[:, 2]).astype(int) + 1,
         )
 
-    def filter_ground_points_with_obstacles_in_height_range(
+    def build_connected_floor_voronois(
         self,
         full_pc: o3d.geometry.PointCloud,
         ground_pc: o3d.geometry.PointCloud,
@@ -236,82 +219,101 @@ class GroundMesh:
         voxel_res: float = 0.05,
         high_threshold: float = 1.7,
         low_threshold: float = 0.2,
+        close_kernel_size: int = 5,
         vis: bool = False,
-    ) -> o3d.geometry.PointCloud:
+    ) -> Tuple[nx.Graph, o3d.geometry.PointCloud]:
+        """build a Voronoi graph for each floor and connect them with trajectories on stairs.
+        The method assumes the z coordinate of the point clouds is aligned with the gravity direction.
+        An example of parameters:
+
+        z-axis
+        |                  |
+        |                  |
+        -----Floor i+1------------ -> heights[i+1]
+        |                  |
+        |------------------|----------------------------
+        |                  |  |                        |
+        |                  |  |                        |
+        |                  |  | ----> high_threshold   | -> Obstacle pc range
+        |                  |  |                        |
+        |                  |  |                        |
+        |---------------------|-------------------------
+        |                  |  |  | -> low_threshold    |
+        |                  |  |  |                     |
+        ------Floor i------------- -> heights[i]       | -> Ground pc range
+        |                  |                           |
+        |------------------|---------------------------- -> heights[i-1] + high_threshold
+        |                  |
+
+        Args:
+            full_pc (o3d.geometry.PointCloud): Full point cloud of the scene.
+            ground_pc (o3d.geometry.PointCloud): Ground point cloud of the scene.
+            heights (np.ndarray): Heights of the floors.
+            voxel_res (float, optional): Voxel resolution. Defaults to 0.05.
+            high_threshold (float, optional): High threshold for obstacle height. Defaults to 1.7.
+            low_threshold (float, optional): Low threshold for obstacle height. Defaults to 0.2.
+            close_kernel_size (int, optional): Kernel size for morphological closing. Defaults to 5.
+            vis (bool, optional): Flag to visualize the process. Defaults to False.
+
+        Returns:
+            Tuple[nx.Graph, o3d.geometry.PointCloud]: A tuple containing the fused Voronoi graph
+            and the filtered ground point cloud.
+        """
         self.compute_grid_parameters(full_pc, voxel_res=voxel_res)
-        height_ranges = zip(heights + low_threshold, heights + high_threshold)
+        obstacle_height_ranges = zip(heights + low_threshold, heights + high_threshold)
         ground_voxel_grid = np.round((np.array(ground_pc.points) - self.min_bound) / voxel_res)
 
         traversable_ground_voxel_grid = []
         self.stairs_pc_list = []
         self.stairs_graph_list = []
         last_high = 0
-        for floor_i, height_range in enumerate(height_ranges):
-            low, high = np.floor((np.array(height_range) - self.min_bound[2]) / voxel_res).astype(int)
+        for floor_i, obstacle_height_range in enumerate(obstacle_height_ranges):
+            low, high = np.floor((np.array(obstacle_height_range) - self.min_bound[2]) / voxel_res).astype(int)
             obstacle_mask = (self.full_voxel_grid[:, 2] >= low) & (self.full_voxel_grid[:, 2] < high)
             ground_mask = (ground_voxel_grid[:, 2] >= last_high) & (ground_voxel_grid[:, 2] < low)
             floor_obstacle_voxels = self.full_voxel_grid[obstacle_mask, :]
             floor_ground_voxels = ground_voxel_grid[ground_mask, :]
 
+            # BEV binary maps for obstacle and ground
             floor_obstacle_map = np.zeros((self.x_range, self.y_range), dtype=bool)
             floor_obstacle_map[floor_obstacle_voxels[:, 0].astype(int), floor_obstacle_voxels[:, 1].astype(int)] = True
             floor_ground_map = np.zeros((self.x_range, self.y_range), dtype=bool)
             floor_ground_map[floor_ground_voxels[:, 0].astype(int), floor_ground_voxels[:, 1].astype(int)] = True
 
-            floor_obstacle_map_cv2 = floor_obstacle_map.astype(np.uint8) * 255
-
-            floor_obstacle_map_close_cv2 = (
-                cv2.morphologyEx(floor_obstacle_map_cv2, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8)) > 0
-            ).astype(np.uint8) * 255
-            floor_ground_map_cv2 = floor_ground_map.astype(np.uint8) * 255
-            floor_ground_map_close_cv2 = (
-                cv2.morphologyEx(floor_ground_map_cv2, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8)) > 0
-            ).astype(np.uint8) * 255
             if vis:
-                cv2.imshow("floor_obstacle_map", floor_obstacle_map_cv2)
-                cv2.imshow("floor_obstacle_map_close", floor_obstacle_map_close_cv2)
-                cv2.imshow("floor_ground_map", floor_ground_map_cv2)
-                cv2.imshow("floor_ground_map_close", floor_ground_map_close_cv2)
+                cv2.imshow("floor_obstacle_map", floor_obstacle_map.astype(np.uint8) * 255)
+                cv2.imshow("floor_ground_map", floor_ground_map.astype(np.uint8) * 255)
                 cv2.waitKey()
 
+            # project poses onto a BEV and treat their vicinity as traversable
             pose_map_floor = self.get_pose_map_on_floor(
-                (height_range[0], height_range[1]),
+                (heights[floor_i], obstacle_height_range[1]),
                 self.min_bound,
                 voxel_res=voxel_res,
-                camera_height_range=0.4,
+                camera_height_range=0.2,
                 radius=1,
                 vis=vis,
             )
 
-            traversable_map = (floor_ground_map | pose_map_floor) & (~floor_obstacle_map)
-            traversable_map = (
-                cv2.morphologyEx(traversable_map.astype(np.uint8) * 255, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8)) > 0
+            # traversable BEV = ground BEV + pose BEV - obstacle BEV
+            traversable_map = (floor_ground_map.astype(bool) | pose_map_floor) & (~floor_obstacle_map.astype(bool))
+            traversable_map = binary_closing(
+                traversable_map, structure=np.ones((close_kernel_size, close_kernel_size)), iterations=1
             )
 
-            traversable_map = self.get_largest_region(traversable_map)
+            traversable_map = get_largest_region(traversable_map)
             if vis:
                 cv2.imshow("traversable_map", traversable_map.astype(np.uint8) * 255)
                 cv2.waitKey()
 
-            if floor_i + 1 < len(heights):
-                stairs_graph, stair_pos_list = self.get_stairs_graph(floor_i, margin=0.5, height_offset=1.0, vis=vis)
-                self.stairs_pc_list.append(stair_pos_list)
-                self.stairs_graph_list.append(stairs_graph)
-
-            traversable_map_rgb = cv2.cvtColor(traversable_map.astype(np.uint8) * 255, cv2.COLOR_GRAY2BGR)
             height_map = np.ones_like(traversable_map, dtype=np.float32) * (heights[floor_i])
             voronoi_graph = self.get_voronoi_graph(
-                traversable_map, traversable_map_rgb, floor_id=str(floor_i), height_map=height_map, vis=vis
+                traversable_map, floor_id=str(floor_i), height_map=height_map, vis=vis
             )
             sparse_voronoi_graph = self.sparsify_graph(voronoi_graph, resampling_dist=0.4)
             self.voronoi_graphs[floor_i] = sparse_voronoi_graph
 
             traversable_x, traversable_y = np.where(traversable_map)
-            # traversable_ground_indices = np.where(
-            #     traversable_map[floor_ground_voxels[:, 0].astype(int), floor_ground_voxels[:, 1].astype(int)]
-            # )[0]
-
-            # traversable_ground_voxels = floor_ground_voxels[traversable_ground_indices, :]
             traversable_ground_voxels = np.concatenate(
                 [
                     traversable_x.reshape((-1, 1)),
@@ -323,14 +325,21 @@ class GroundMesh:
             traversable_ground_voxel_grid.append(traversable_ground_voxels)
             last_high = high
 
+            # build stairs graph between this floor and the next floor
+            if floor_i + 1 < len(heights):
+                stairs_graph, stair_pos_list = self.get_stairs_graph(floor_i, margin=0.5, height_offset=1.0, vis=vis)
+                self.stairs_pc_list.append(stair_pos_list)
+                self.stairs_graph_list.append(stairs_graph)
+
+        # connect floor voronois with the stairs graph
+        self.fused_graph = self.voronoi_graphs[0]
         for floor_i, stair_graph in enumerate(self.stairs_graph_list):
-            fused_graph = self.connect_voronoi_graphs(self.stairs_graph_list[floor_i], self.voronoi_graphs[floor_i])
-            fused_graph = self.connect_voronoi_graphs(fused_graph, self.voronoi_graphs[floor_i + 1])
-        self.fused_graph = fused_graph
+            self.fused_graph = self.connect_voronoi_graphs(self.stairs_graph_list[floor_i], self.fused_graph)
+            self.fused_graph = self.connect_voronoi_graphs(self.fused_graph, self.voronoi_graphs[floor_i + 1])
 
         traversable_ground_voxel_grid = np.vstack(traversable_ground_voxel_grid)
         traversable_ground_points = traversable_ground_voxel_grid * voxel_res + self.min_bound
-        return traversable_ground_points
+        return self.fused_graph, traversable_ground_points
 
     def get_pose_map_on_floor(
         self,
@@ -341,6 +350,23 @@ class GroundMesh:
         radius: float = 0.5,
         vis: bool = False,
     ) -> np.ndarray:
+        """Generate a binary BEV map where projected pose locations and their
+        vicinity within a radius are 1. Otherwise pixel values are 0.
+
+        Args:
+            floor_height_range (Tuple[float, float]): Height range for
+                selecting poses on the floor.
+            min_bound (np.ndarray): Minimum bound of the grid.
+            voxel_res (float, optional): Voxel resolution. Defaults to 0.1.
+            camera_height_range (float, optional): Height range for filtering
+                poses around the major height. Defaults to 0.3.
+            radius (float, optional): Radius around each pose to mark on the
+                map. Defaults to 0.5.
+            vis (bool, optional): Whether to visualize the pose map. Defaults
+                to False.
+        Returns:
+            np.ndarray: Binary BEV map with pose locations marked.
+        """
         poses_list_on_floor = [
             pose
             for pose in self.pose_list
@@ -373,6 +399,22 @@ class GroundMesh:
     def get_stairs_graph(
         self, floor_id: int, margin: float = 0.1, height_offset: float = 1.0, vis: bool = False
     ) -> Tuple[nx.Graph, np.ndarray]:
+        """Generate a graph representing the exploration trajectory on the stairs
+        between two floors.
+
+        Args:
+            floor_id (int): The floor id. For example, 0 for the first floor.
+            margin (float, optional): A range of height for selecting poses.
+                Defaults to 0.1.
+            height_offset (float, optional): Height offset for adjusting the
+                z-coordinate of poses in the stairs graph. Defaults to 1.0.
+            vis (bool, optional): Whether to visualize the stairs graph.
+                Defaults to False.
+
+        Returns:
+            Tuple[nx.Graph, np.ndarray]: A tuple containing the stairs graph
+                and the list of stair positions.
+        """
 
         pose_heights = np.array([pose[2, 3] for pose in self.pose_list])
         frequency, bin_edges = np.histogram(pose_heights, bins=100)  # len(bin_edges) = len(frequency) + 1
@@ -410,28 +452,9 @@ class GroundMesh:
 
         return stairs_graph, stair_pos_list
 
-    def get_largest_region(self, binary_map: np.ndarray) -> np.ndarray:
-        """Get the largest disconnected island region in the binary map.
-
-        Args:
-            binary_map (np.ndarray): The binary map.
-
-        Returns:
-            np.ndarray: the largest region in the binary map.
-        """
-        # Threshold it so it becomes binary
-        input = (binary_map > 0).astype(np.uint8)
-        output = cv2.connectedComponentsWithStats(input, 8, cv2.CV_8UC1)
-        areas = output[2][:, -1]
-        # TODO: the top region is 0 region, so we need to sort the areas and get the second largest
-        # but I am not sure if the largest region is always the background
-        id = np.argsort(areas)[::-1][1]
-        return output[1] == id
-
     def get_voronoi_graph(
         self,
         main_free_map: np.ndarray,
-        map_rgb: np.ndarray,
         floor_id: str,
         height_map: np.ndarray = None,
         vis: bool = False,
@@ -440,10 +463,7 @@ class GroundMesh:
 
         Args:
             main_free_map (np.ndarray): Free space map.
-            map_rgb (np.ndarray): RGB map of the floor.
-            floor_dir (str): Directory where the intermediate results will be stored.
             floor_id (str): The floor id. For example, "0" for the first floor.
-            name (str, optional): The name is used for saving the intermediate results. Defaults to "".
             height_map (np.ndarray, optional): Height map used for getting the 3D positional attributes of
                 the Voronoi node. Defaults to None.
 
@@ -458,8 +478,6 @@ class GroundMesh:
 
         fig_free = main_free_map.copy().astype(np.uint8) * 255
         fig_free = cv2.cvtColor(fig_free, cv2.COLOR_GRAY2BGR)
-        map_bgr = cv2.cvtColor(map_rgb, cv2.COLOR_RGB2BGR)
-        fig = map_bgr.copy()
         vertices = []
         if height_map is None:
             height_map = np.ones_like(boundary_map) * self.min_bound[2]
@@ -471,24 +489,17 @@ class GroundMesh:
             src, tar = voronoi.vertices[simplex]
             if (
                 src[0] < 0
-                or src[0] >= fig.shape[0]
+                or src[0] >= fig_free.shape[0]
                 or src[1] < 0
-                or src[1] >= fig.shape[1]
+                or src[1] >= fig_free.shape[1]
                 or tar[0] < 0
-                or tar[0] >= fig.shape[0]
+                or tar[0] >= fig_free.shape[0]
                 or tar[1] < 0
-                or tar[1] >= fig.shape[1]
+                or tar[1] >= fig_free.shape[1]
             ):
                 continue
             if main_free_map[int(src[0]), int(src[1])] == 0 or main_free_map[int(tar[0]), int(tar[1])] == 0:
                 continue
-            cv2.line(
-                fig,
-                tuple(np.int32(src[::-1])),
-                tuple(np.int32(tar[::-1])),
-                (0, 0, 255),
-                1,
-            )
             cv2.line(
                 fig_free,
                 tuple(np.int32(src[::-1])),
@@ -496,7 +507,6 @@ class GroundMesh:
                 (0, 0, 255),
                 1,
             )
-            cv2.circle(fig, tuple(np.int32(src[::-1])), 2, (255, 0, 0), -1)
             cv2.circle(fig_free, tuple(np.int32(src[::-1])), 2, (255, 0, 0), -1)
 
             # check if src and tar already exist in the graph
@@ -530,17 +540,21 @@ class GroundMesh:
                     dist=np.linalg.norm(src - tar),
                 )
         if vis:
-            cv2.imshow("voronoi", fig)
             cv2.imshow("voronoi_free", fig_free)
             cv2.waitKey()
-        # cv2.imwrite(os.path.join(floor_dir, f"vor_{name}.png"), fig)
-        # cv2.imwrite(os.path.join(floor_dir, f"vor_free_{name}.png"), fig_free)
-        # vertices = np.array(vertices)
         return voronoi_graph
 
-    def sparsify_graph(self, floor_graph: nx.Graph, resampling_dist: float = 0.4):
-        """
-        Optimized sparsification using chain traversal instead of all-pairs shortest paths.
+    def sparsify_graph(self, floor_graph: nx.Graph, resampling_dist: float = 0.4) -> nx.Graph:
+        """Sparsify the graph by removing nodes within a certain distance
+        using chain traversal instead of all-pairs shortest paths.
+
+        Args:
+            floor_graph (nx.Graph): The input floor graph to be sparsified.
+            resampling_dist (float, optional): The distance threshold for resampling
+                nodes. Defaults to 0.4.
+
+        Returns:
+            nx.Graph: The sparsified graph.
         """
         if len(floor_graph.nodes) < 10:
             return floor_graph.copy()
@@ -582,7 +596,7 @@ class GroundMesh:
 
         return new_graph
 
-    def _add_resampled_path(self, new_graph, original_graph, path, resampling_dist):
+    def _add_resampled_path(self, new_graph: nx.Graph, original_graph: nx.Graph, path: List, resampling_dist: float):
         """
         Helper to subdivide a long chain of nodes based on resampling_dist.
         """

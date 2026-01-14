@@ -1,4 +1,5 @@
 import numpy as np
+import cv2
 import open3d as o3d
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import find_peaks
@@ -56,7 +57,8 @@ def project_points(pc: np.ndarray, intrinsics: np.ndarray, w: int, h: int) -> Tu
         h (int): Image height.
 
     Returns:
-        Tuple[np.ndarray, np.ndarray, np.ndarray]: (N, 2) 2D projected points, (N,) depth values, (N, 3) filtered 3D points.
+        Tuple[np.ndarray, np.ndarray, np.ndarray]: (N, 2) 2D projected points, (N,) depth values, (N, 3) filtered 3D points
+        that can be projected into the image region in camera frame.
     """
     # filter points behind the camera
     pc = pc[pc[:, 2] > 0]
@@ -67,6 +69,7 @@ def project_points(pc: np.ndarray, intrinsics: np.ndarray, w: int, h: int) -> Tu
     mask = (pc_2d[0, :] >= 0) & (pc_2d[0, :] < w) & (pc_2d[1, :] >= 0) & (pc_2d[1, :] < h)
     pc = pc[mask, :]
     pc_2d = pc_2d[:, mask]
+    pc_2d_d = pc_2d_d[:, mask]
     return pc_2d[:2, :].T, pc_2d_d[2, :], pc  # (N, 2), (N,), (N, 3)
 
 
@@ -147,3 +150,101 @@ def segment_floor(pc: np.ndarray, resolution: float = 0.05, vis: bool = False) -
         plt.hlines(min_peak_height, np.min(z_hist[1]), np.max(z_hist[1]), colors="r")
         plt.show()
     return np.array(heights)
+
+
+def transform_point_cloud(pc: np.ndarray, transform: np.ndarray) -> np.ndarray:
+    """Transform a point cloud with a given transformation matrix.
+
+    Args:
+        pc (np.ndarray): (N, 3) point cloud.
+        transform (np.ndarray): (4, 4) transformation matrix.
+
+    Returns:
+        np.ndarray: Transformed (N, 3) point cloud.
+    """
+    pc_hom = np.hstack((pc, np.ones((pc.shape[0], 1))))  # (N, 4)
+    pc_transformed_hom = (transform @ pc_hom.T).T
+    return pc_transformed_hom[:, :3]
+
+
+def select_points_in_masks(
+    mask: np.ndarray, pc_image_2d: np.ndarray, pc_image_3d: np.ndarray
+) -> o3d.geometry.PointCloud:
+    """Select 3D points from a point cloud whose 2D projected locations are inside the mask.
+
+    Args:
+        mask (np.ndarray): Binary mask indicating valid regions.
+        pc_image_2d (np.ndarray): (N, 2) array of 2D projected points in the image pixel space.
+        pc_image_3d (np.ndarray): (N, 3) array of corresponding 3D points.
+    Returns:
+        o3d.geometry.PointCloud: Point cloud containing only the selected 3D points.
+    """
+    valid_indices = np.where(mask[pc_image_2d[:, 1].astype(int), pc_image_2d[:, 0].astype(int)] > 0)[0]
+    ground_pc_image_3d = pc_image_3d[valid_indices, :]  # (K, 3)
+    pc_o3d = o3d.geometry.PointCloud()
+    pc_o3d.points = o3d.utility.Vector3dVector(ground_pc_image_3d)
+    return pc_o3d
+
+
+def to_o3d_pc(pc: np.ndarray) -> o3d.geometry.PointCloud:
+    """Convert a numpy array point cloud to Open3D PointCloud object.
+
+    Args:
+        pc (np.ndarray): (N, 3) point cloud.
+
+    Returns:
+        o3d.geometry.PointCloud: Open3D PointCloud object.
+    """
+    pc_o3d = o3d.geometry.PointCloud()
+    pc_o3d.points = o3d.utility.Vector3dVector(pc)
+    return pc_o3d
+
+
+def to_numpy_pc(pc_o3d: o3d.geometry.PointCloud) -> np.ndarray:
+    """Convert an Open3D PointCloud object to a numpy array point cloud.
+
+    Args:
+        pc_o3d (o3d.geometry.PointCloud): Open3D PointCloud object.
+
+    Returns:
+        np.ndarray: (N, 3) point cloud.
+    """
+    return np.asarray(pc_o3d.points)
+
+
+def get_largest_region(binary_map: np.ndarray) -> np.ndarray:
+    """Get the largest disconnected island region in the binary map.
+
+    Args:
+        binary_map (np.ndarray): The binary map.
+
+    Returns:
+        np.ndarray: the largest region in the binary map.
+    """
+    # Threshold it so it becomes binary
+    input = (binary_map > 0).astype(np.uint8)
+    output = cv2.connectedComponentsWithStats(input, 8, cv2.CV_8UC1)
+    areas = output[2][:, -1]
+    # TODO: the top region is 0 region, so we need to sort the areas and get the second largest
+    # but I am not sure if the largest region is always the background
+    id = np.argsort(areas)[::-1][1]
+    return output[1] == id
+
+
+def select_points_near_heights(pc: np.ndarray, heights: np.ndarray, threshold: float = 0.05) -> List[np.ndarray]:
+    """Select points whose z values are within a range at certain heights.
+
+    Args:
+        pc (np.ndarray): Point cloud as a numpy array of shape (N, 3).
+        heights (np.ndarray): Array of height values to select points around.
+        threshold (float, optional): Threshold range around each height. Defaults to 0.05.
+
+    Returns:
+        List[np.ndarray]: List of point clouds near each height.
+    """
+    mask = np.zeros(pc.shape[0], dtype=bool)
+    pc_list = []
+    for h in heights:
+        mask = (pc[:, 2] >= h - threshold) & (pc[:, 2] <= h + threshold)
+        pc_list.append(pc[mask, :])
+    return pc_list
