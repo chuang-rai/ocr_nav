@@ -1,4 +1,5 @@
 import json
+import threading
 from pathlib import Path
 import numpy as np
 import networkx as nx
@@ -25,7 +26,9 @@ from ocr_nav.utils.io_utils import (
     load_livox_poses_timestamps,
     search_latest_poses_within_timestamp_range,
     FolderIO,
+    SubscriberIO,
 )
+import rclpy
 from typing import List, Tuple
 
 
@@ -71,8 +74,8 @@ class FloorGraph:
         # load livox poses and timestamps of glim results
         livox_poses, livox_timestamps = load_livox_poses_timestamps(livox_poses_timestamps_path)
 
-        full_ground_pc_livox = o3d.geometry.PointCloud()
-        full_ground_pc_rs = o3d.geometry.PointCloud()
+        self.full_ground_pc_livox = o3d.geometry.PointCloud()
+        self.full_ground_pc_rs = o3d.geometry.PointCloud()
         self.full_pc_rs = o3d.geometry.PointCloud()
         self.full_pc_livox = o3d.geometry.PointCloud()
         self.pose_list = []
@@ -91,6 +94,14 @@ class FloorGraph:
             if pi == 0:
                 img = folderio.get_image(pi)
                 h, w, _ = np.array(img).shape
+                static_params = {
+                    "tf_livox2zed_left": tf_livox2zed_left,
+                    "tf_zed_left2livox": tf_zed_left2livox,
+                    "tf_rs2zed_left": tf_rs2zed_left,
+                    "intr_mat": intr_mat,
+                    "w": w,
+                    "h": h,
+                }
 
             masks = folderio.get_mask(pi)
             pc_livox = folderio.get_livox(pi)  # (N, 3)
@@ -106,51 +117,154 @@ class FloorGraph:
                 print(f"No livox pose found for frame {frame_id}, skipping...")
                 continue
 
-            self.pose_list.append(livox_pose)
+            mask_np = masks[0][0]
 
-            # transform point cloud from robosense/livox frames to zed left camera frame
-            pc_livox_in_zed_frame = transform_point_cloud(pc_livox, tf_livox2zed_left)  # (N, 3)
-            pc_rslidar_in_zed_frame = transform_point_cloud(pc_rslidar, tf_rs2zed_left)  # (N, 3)
-
-            # project points to image plane
-            pc_livox_image_2d, pc_livox_image_2d_depth, filtered_pc_livox_in_zed_frame = project_points(
-                pc_livox_in_zed_frame, intr_mat, w, h
-            )  # (N, 2), (N,), (N, 3)
-            pc_rs_image_2d, pc_rs_image_2d_depth, filtered_pc_rslidar_in_zed_frame = project_points(
-                pc_rslidar_in_zed_frame, intr_mat, w, h
-            )  # (N, 2), (N,), (N, 3)
-
-            # Select Livox ground points using segmentation masks
-            ground_mask = masks[0][0]
-            ground_pc_livox_o3d = select_points_in_masks(ground_mask, pc_livox_image_2d, filtered_pc_livox_in_zed_frame)
-            ground_pc_livox_o3d = ground_pc_livox_o3d.transform(livox_pose @ tf_zed_left2livox)
-            full_ground_pc_livox += ground_pc_livox_o3d
-
-            # Select RoboSense ground points using segmentation masks
-            ground_pc_rs_o3d = select_points_in_masks(ground_mask, pc_rs_image_2d, filtered_pc_rslidar_in_zed_frame)
-            ground_pc_rs_o3d = ground_pc_rs_o3d.transform(livox_pose @ tf_zed_left2livox)
-            full_ground_pc_rs += ground_pc_rs_o3d
-
-            # Accumulate full Livox point clouds
-            pc_livox_world_np = transform_point_cloud(filtered_pc_livox_in_zed_frame, livox_pose @ tf_zed_left2livox)
-            pc_livox_world_o3d = to_o3d_pc(pc_livox_world_np)
-            self.full_pc_livox += pc_livox_world_o3d
-
-            # Accumulate full RoboSense point clouds
-            pc_rs_world_np = transform_point_cloud(filtered_pc_rslidar_in_zed_frame, livox_pose @ tf_zed_left2livox)
-            pc_rs_world_o3d = to_o3d_pc(pc_rs_world_np)
-            self.full_pc_rs += pc_rs_world_o3d
-
-            # Add pose node to the pose graph
-            pose_id = self.pose_graph.add_pose(pi, livox_pose, lidar=pc_rs_world_o3d)
-            if last_pi != -1 and self.pose_graph.G.has_node(last_pi):
-                self.pose_graph.add_pose_edge(last_pi, pi)
+            self.accumulate_ground_points(
+                pc_livox,
+                pc_rslidar,
+                mask_np,
+                livox_pose,
+                static_params,
+                pi,
+                last_pi,
+            )
 
             last_pi = pi
 
-        heights = segment_floor(np.array(full_ground_pc_livox.points), resolution=floor_seg_resolution, vis=vis)
+        self.fused_floor_graph, self.full_ground_pc = self.build_floor_graph_with_ground_points(
+            floor_seg_resolution, obstacle_height_range, vis
+        )
+        return self.fused_floor_graph, self.full_ground_pc
+
+    def build_floor_graph_with_rosio(
+        self,
+        subscriber_io: SubscriberIO,
+        floor_seg_resolution: float = 0.05,
+        obstacle_height_range: Tuple[float, float] = (0.6, 2.7),
+        sample_rate: int = 10,
+        vis: bool = False,
+    ):
+
+        one_time_read_flag = False
+        self.full_ground_pc_livox = o3d.geometry.PointCloud()
+        self.full_ground_pc_rs = o3d.geometry.PointCloud()
+        self.full_pc_rs = o3d.geometry.PointCloud()
+        self.full_pc_livox = o3d.geometry.PointCloud()
+        self.pose_list = []
+        pi = 0
+
+        try:
+            while rclpy.ok():
+                if not one_time_read_flag:
+                    tf_livox2zed_left = subscriber_io.get_livox2left_camera_tf()
+                    tf_rs2zed_left = subscriber_io.get_rslidar2left_camera_tf()
+                    if tf_livox2zed_left is None or tf_rs2zed_left is None:
+                        print("Waiting for static transforms...")
+                        continue
+                    tf_zed_left2livox = np.linalg.inv(tf_livox2zed_left)
+                    intr_mat = subscriber_io.get_intrinsics()
+                    h, w = subscriber_io.get_image_size()
+                    static_params = {
+                        "tf_livox2zed_left": tf_livox2zed_left,
+                        "tf_zed_left2livox": tf_zed_left2livox,
+                        "tf_rs2zed_left": tf_rs2zed_left,
+                        "intr_mat": intr_mat,
+                        "w": w,
+                        "h": h,
+                    }
+                    one_time_read_flag = True
+
+                data = subscriber_io.get_latest_sync_data()
+                if data is None:
+                    continue
+                pc_livox, pc_rslidar, mask_np, livox_pose = data
+
+                self.accumulate_ground_points(
+                    pc_livox,
+                    pc_rslidar,
+                    mask_np,
+                    livox_pose,
+                    static_params,
+                    pi,
+                    last_pi,
+                )
+
+                last_pi = pi
+                pi += 1
+
+        except KeyboardInterrupt:
+            pass
+
+        self.fused_floor_graph, self.full_ground_pc = self.build_floor_graph_with_ground_points(
+            floor_seg_resolution, obstacle_height_range, vis
+        )
+        return self.fused_floor_graph, self.full_ground_pc
+
+    def accumulate_ground_points(
+        self,
+        pc_livox,
+        pc_rslidar,
+        mask_np,
+        livox_pose,
+        static_params,
+        pi,
+        last_pi,
+    ):
+        tf_livox2zed_left = static_params["tf_livox2zed_left"]
+        tf_zed_left2livox = static_params["tf_zed_left2livox"]
+        tf_rs2zed_left = static_params["tf_rs2zed_left"]
+        intr_mat = static_params["intr_mat"]
+        w = static_params["w"]
+        h = static_params["h"]
+
+        self.pose_list.append(livox_pose)
+
+        # transform point cloud from robosense/livox frames to zed left camera frame
+        pc_livox_in_zed_frame = transform_point_cloud(pc_livox, tf_livox2zed_left)  # (N, 3)
+        pc_rslidar_in_zed_frame = transform_point_cloud(pc_rslidar, tf_rs2zed_left)  # (N, 3)
+
+        # project points to image plane
+        pc_livox_image_2d, pc_livox_image_2d_depth, filtered_pc_livox_in_zed_frame = project_points(
+            pc_livox_in_zed_frame, intr_mat, w, h
+        )  # (N, 2), (N,), (N, 3)
+        pc_rs_image_2d, pc_rs_image_2d_depth, filtered_pc_rslidar_in_zed_frame = project_points(
+            pc_rslidar_in_zed_frame, intr_mat, w, h
+        )  # (N, 2), (N,), (N, 3)
+
+        # Select Livox ground points using segmentation masks
+        ground_mask = mask_np == 1
+        ground_pc_livox_o3d = select_points_in_masks(ground_mask, pc_livox_image_2d, filtered_pc_livox_in_zed_frame)
+        ground_pc_livox_o3d = ground_pc_livox_o3d.transform(livox_pose @ tf_zed_left2livox)
+        self.full_ground_pc_livox += ground_pc_livox_o3d
+
+        # Select RoboSense ground points using segmentation masks
+        ground_pc_rs_o3d = select_points_in_masks(ground_mask, pc_rs_image_2d, filtered_pc_rslidar_in_zed_frame)
+        ground_pc_rs_o3d = ground_pc_rs_o3d.transform(livox_pose @ tf_zed_left2livox)
+        self.full_ground_pc_rs += ground_pc_rs_o3d
+
+        # Accumulate full Livox point clouds
+        pc_livox_world_np = transform_point_cloud(filtered_pc_livox_in_zed_frame, livox_pose @ tf_zed_left2livox)
+        pc_livox_world_o3d = to_o3d_pc(pc_livox_world_np)
+        self.full_pc_livox += pc_livox_world_o3d
+
+        # Accumulate full RoboSense point clouds
+        pc_rs_world_np = transform_point_cloud(filtered_pc_rslidar_in_zed_frame, livox_pose @ tf_zed_left2livox)
+        pc_rs_world_o3d = to_o3d_pc(pc_rs_world_np)
+        self.full_pc_rs += pc_rs_world_o3d
+        # Add pose node to the pose graph
+        pose_id = self.pose_graph.add_pose(pi, livox_pose, lidar=pc_rs_world_o3d)
+        if last_pi != -1 and self.pose_graph.G.has_node(last_pi):
+            self.pose_graph.add_pose_edge(last_pi, pi)
+
+    def build_floor_graph_with_ground_points(
+        self,
+        floor_seg_resolution: float = 0.1,
+        obstacle_height_range: Tuple[float, float] = (0.6, 2.7),
+        vis: bool = False,
+    ):
+        heights = segment_floor(np.array(self.full_ground_pc_livox.points), resolution=floor_seg_resolution, vis=vis)
         full_ground_pc_numpy_list = select_points_near_heights(
-            np.array((full_ground_pc_livox + full_ground_pc_rs).points), heights, threshold=0.2
+            np.array((self.full_ground_pc_livox + self.full_ground_pc_rs).points), heights, threshold=0.2
         )
         full_ground_pc_np = np.vstack(full_ground_pc_numpy_list)  # (N, 3)
         self.full_ground_pc = to_o3d_pc(full_ground_pc_np)
@@ -166,6 +280,7 @@ class FloorGraph:
             vis=vis,
         )
         self.full_ground_pc = to_o3d_pc(full_ground_pc_np)
+        return fused_floor_graph, self.full_ground_pc
 
     @staticmethod
     def save_floor_graph(graph: nx.Graph, graph_path: Path) -> None:
