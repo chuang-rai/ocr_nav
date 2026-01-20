@@ -1,5 +1,4 @@
 import json
-import threading
 from pathlib import Path
 import numpy as np
 import networkx as nx
@@ -22,14 +21,15 @@ from ocr_nav.utils.mapping_utils import (
     to_o3d_pc,
     get_largest_region,
 )
+from ocr_nav.utils.segmentation_utils import GroundingDinoSamSegmenter
 from ocr_nav.utils.io_utils import (
     load_livox_poses_timestamps,
     search_latest_poses_within_timestamp_range,
     FolderIO,
     SubscriberIO,
+    BagIO,
 )
 import rclpy
-from typing import List, Tuple
 
 
 class FloorGraph:
@@ -54,7 +54,7 @@ class FloorGraph:
         self,
         folderio: FolderIO,
         floor_seg_resolution: float = 0.05,
-        obstacle_height_range: Tuple[float, float] = (0.6, 2.7),
+        obstacle_height_range: tuple[float, float] = (0.6, 2.7),
         sample_rate: int = 10,
         vis: bool = False,
     ) -> None:
@@ -131,20 +131,18 @@ class FloorGraph:
 
             last_pi = pi
 
-        self.fused_floor_graph, self.full_ground_pc = self.build_floor_graph_with_ground_points(
+        self.floor_graph, self.full_ground_pc = self.build_floor_graph_with_ground_points(
             floor_seg_resolution, obstacle_height_range, vis
         )
-        return self.fused_floor_graph, self.full_ground_pc
+        return self.floor_graph, self.full_ground_pc
 
     def build_floor_graph_with_rosio(
         self,
         subscriber_io: SubscriberIO,
         floor_seg_resolution: float = 0.05,
-        obstacle_height_range: Tuple[float, float] = (0.6, 2.7),
-        sample_rate: int = 10,
+        obstacle_height_range: tuple[float, float] = (0.6, 2.7),
         vis: bool = False,
     ):
-
         one_time_read_flag = False
         self.full_ground_pc_livox = o3d.geometry.PointCloud()
         self.full_ground_pc_rs = o3d.geometry.PointCloud()
@@ -152,6 +150,7 @@ class FloorGraph:
         self.full_pc_livox = o3d.geometry.PointCloud()
         self.pose_list = []
         pi = 0
+        last_pi = -1
 
         try:
             while rclpy.ok():
@@ -195,21 +194,110 @@ class FloorGraph:
         except KeyboardInterrupt:
             pass
 
-        self.fused_floor_graph, self.full_ground_pc = self.build_floor_graph_with_ground_points(
+        self.floor_graph, self.full_ground_pc = self.build_floor_graph_with_ground_points(
             floor_seg_resolution, obstacle_height_range, vis
         )
-        return self.fused_floor_graph, self.full_ground_pc
+        return self.floor_graph, self.full_ground_pc
+
+    def build_floor_graph_with_bagio(
+        self,
+        bagio: BagIO,
+        segmenter: GroundingDinoSamSegmenter,
+        floor_seg_resolution: float = 0.1,
+        obstacle_height_range: tuple[float, float] = (0.6, 2.7),
+        vis: bool = False,
+    ) -> None:
+        one_time_read_flag = False
+        self.full_ground_pc_livox = o3d.geometry.PointCloud()
+        self.full_ground_pc_rs = o3d.geometry.PointCloud()
+        self.full_pc_rs = o3d.geometry.PointCloud()
+        self.full_pc_livox = o3d.geometry.PointCloud()
+        self.pose_list = []
+        pi = 0
+        last_pi = -1
+
+        try:
+            while bagio.has_next():
+                if not one_time_read_flag:
+                    tf_livox2zed_left = bagio.get_livox2left_camera_tf()
+                    tf_rs2zed_left = bagio.get_rslidar2left_camera_tf()
+                    if tf_livox2zed_left is None or tf_rs2zed_left is None:
+                        print("Waiting for static transforms...")
+                        continue
+                    tf_zed_left2livox = np.linalg.inv(tf_livox2zed_left)
+                    intr_mat = bagio.get_intrinsics()
+                    h, w = bagio.get_image_size()
+                    static_params = {
+                        "tf_livox2zed_left": tf_livox2zed_left,
+                        "tf_zed_left2livox": tf_zed_left2livox,
+                        "tf_rs2zed_left": tf_rs2zed_left,
+                        "intr_mat": intr_mat,
+                        "w": w,
+                        "h": h,
+                    }
+                    one_time_read_flag = True
+
+                data = bagio.get_next_sync_data()
+                if data is None:
+                    continue
+                pc_livox, pc_rslidar, img_np, livox_pose = data
+
+                mask_np = segmenter.segment(img_np, text_prompt="ground")
+
+                self.accumulate_ground_points(
+                    pc_livox,
+                    pc_rslidar,
+                    mask_np,
+                    livox_pose,
+                    static_params,
+                    pi,
+                    last_pi,
+                )
+
+                last_pi = pi
+                pi += 1
+
+        except KeyboardInterrupt:
+            pass
+
+        self.floor_graph, self.full_ground_pc = self.build_floor_graph_with_ground_points(
+            floor_seg_resolution, obstacle_height_range, vis
+        )
+        return self.floor_graph, self.full_ground_pc
 
     def accumulate_ground_points(
         self,
-        pc_livox,
-        pc_rslidar,
-        mask_np,
-        livox_pose,
-        static_params,
-        pi,
-        last_pi,
-    ):
+        pc_livox: np.ndarray,
+        pc_rslidar: np.ndarray,
+        mask_np: np.ndarray,
+        livox_pose: np.ndarray,
+        static_params: dict,
+        pi: int,
+        last_pi: int,
+    ) -> None:
+        """Project LiDAR pionts into the image plane, select ground points using segmentation masks,
+        and accumulate the ground points and full point clouds in the world frame. This method
+        updates self.full_ground_pc_livox, self.full_ground_pc_rs, self.full_pc_livox, and self.full_pc_rs.
+        At the same time, it also adds pose nodes and edges to the pose graph (self.pose_graph).
+
+        Args:
+            pc_livox (np.ndarray): (N, 3) array of Livox point cloud in Livox frame.
+            pc_rslidar (np.ndarray): (N, 3) array of RoboSense point cloud in RoboSense frame.
+            mask_np (np.ndarray): (H, W) segmentation mask array. 1 indicates ground. Otherwise 0.
+            livox_pose (np.ndarray): (4, 4) transformation matrix representing the pose of the Livox sensor
+                in the world frame.
+            static_params (Dict): Dictionary containing static transformation matrices and camera intrinsics.
+                static_params = {
+                    "tf_livox2zed_left": tf_livox2zed_left,
+                    "tf_zed_left2livox": tf_zed_left2livox,
+                    "tf_rs2zed_left": tf_rs2zed_left,
+                    "intr_mat": intr_mat,
+                    "w": w,
+                    "h": h,
+                }
+            pi (int): Current pose index.
+            last_pi (int): Previous pose index.
+        """
         tf_livox2zed_left = static_params["tf_livox2zed_left"]
         tf_zed_left2livox = static_params["tf_zed_left2livox"]
         tf_rs2zed_left = static_params["tf_rs2zed_left"]
@@ -252,16 +340,31 @@ class FloorGraph:
         pc_rs_world_o3d = to_o3d_pc(pc_rs_world_np)
         self.full_pc_rs += pc_rs_world_o3d
         # Add pose node to the pose graph
-        pose_id = self.pose_graph.add_pose(pi, livox_pose, lidar=pc_rs_world_o3d)
+        self.pose_graph.add_pose(pi, livox_pose, lidar=pc_rs_world_o3d)
         if last_pi != -1 and self.pose_graph.G.has_node(last_pi):
             self.pose_graph.add_pose_edge(last_pi, pi)
 
     def build_floor_graph_with_ground_points(
         self,
         floor_seg_resolution: float = 0.1,
-        obstacle_height_range: Tuple[float, float] = (0.6, 2.7),
+        obstacle_height_range: tuple[float, float] = (0.6, 2.7),
         vis: bool = False,
-    ):
+    ) -> tuple[nx.Graph, o3d.geometry.PointCloud]:
+        """Build the multi-floor floor graph with ground point clouds.
+
+        Args:
+            floor_seg_resolution (float, optional): The height histogram resolution. Defaults to 0.1 meters.
+            obstacle_height_range (tuple[float, float], optional): The range of obstacle heights to consider.
+                Defaults to (0.6, 2.7) meters.
+            vis (bool, optional): Whether to visualize the process. Defaults to False.
+
+        Returns:
+            tuple[nx.Graph, o3d.geometry.PointCloud]: A tuple containing the fused floor graph and the full
+                ground point cloud. The fused floor graph contains Voronoi graphs of all floors connected by
+                stair trajectories. Each node in the graph has an attribute "pos" indicating its 3D position.
+                Each edge represents a traversable connection between nodes, containing a "weight" attribute
+                indicating the Euclidean distance between the nodes.
+        """
         heights = segment_floor(np.array(self.full_ground_pc_livox.points), resolution=floor_seg_resolution, vis=vis)
         full_ground_pc_numpy_list = select_points_near_heights(
             np.array((self.full_ground_pc_livox + self.full_ground_pc_rs).points), heights, threshold=0.2
@@ -282,20 +385,20 @@ class FloorGraph:
         self.full_ground_pc = to_o3d_pc(full_ground_pc_np)
         return fused_floor_graph, self.full_ground_pc
 
-    @staticmethod
-    def save_floor_graph(graph: nx.Graph, graph_path: Path) -> None:
+    def save_floor_graph(self, graph_path: Path) -> None:
         """Save the floor graph to a json file.
 
         Args:
             graph (nx.Graph): The floor graph.
             graph_path (Path): The path where the graph will be saved.
         """
-        graph_json = nx.node_link_data(graph)
+        assert hasattr(self, "floor_graph"), "Floor graph not built yet! Call"
+        "build_floor_graph_with_*() methods first."
+        graph_json = nx.node_link_data(self.floor_graph)
         with open(graph_path, "w") as f:
             json.dump(graph_json, f, indent=4)
 
-    @staticmethod
-    def load_floor_graph(graph_path: Path) -> nx.Graph:
+    def load_floor_graph(self, graph_path: Path) -> nx.Graph:
         """Load the floor graph saved as a json file.
 
         Args:
@@ -306,8 +409,8 @@ class FloorGraph:
         """
         with open(graph_path, "r") as f:
             graph_json = json.load(f)
-        graph = nx.node_link_graph(graph_json)
-        return graph
+        self.floor_graph = nx.node_link_graph(graph_json)
+        return self.floor_graph
 
     def compute_grid_parameters(self, full_pc: o3d.geometry.PointCloud, voxel_res: float = 0.05) -> None:
         """Given a point cloud of the whole scene, compute the voxel grid
@@ -336,7 +439,7 @@ class FloorGraph:
         low_threshold: float = 0.2,
         close_kernel_size: int = 5,
         vis: bool = False,
-    ) -> Tuple[nx.Graph, o3d.geometry.PointCloud]:
+    ) -> tuple[nx.Graph, o3d.geometry.PointCloud]:
         """build a Voronoi graph for each floor and connect them with trajectories on stairs.
         The method assumes the z coordinate of the point clouds is aligned with the gravity direction.
         An example of parameters:
@@ -371,7 +474,7 @@ class FloorGraph:
             vis (bool, optional): Flag to visualize the process. Defaults to False.
 
         Returns:
-            Tuple[nx.Graph, o3d.geometry.PointCloud]: A tuple containing the fused Voronoi graph
+            tuple[nx.Graph, o3d.geometry.PointCloud]: A tuple containing the fused Voronoi graph
             and the filtered ground point cloud.
         """
         self.compute_grid_parameters(full_pc, voxel_res=voxel_res)
@@ -447,18 +550,18 @@ class FloorGraph:
                 self.stairs_graph_list.append(stairs_graph)
 
         # connect floor voronois with the stairs graph
-        self.fused_graph = self.voronoi_graphs[0]
+        fused_floor_graph = self.voronoi_graphs[0]
         for floor_i, stair_graph in enumerate(self.stairs_graph_list):
-            self.fused_graph = self.connect_voronoi_graphs(self.stairs_graph_list[floor_i], self.fused_graph)
-            self.fused_graph = self.connect_voronoi_graphs(self.fused_graph, self.voronoi_graphs[floor_i + 1])
+            fused_floor_graph = self.connect_voronoi_graphs(self.stairs_graph_list[floor_i], fused_floor_graph)
+            fused_floor_graph = self.connect_voronoi_graphs(fused_floor_graph, self.voronoi_graphs[floor_i + 1])
 
         traversable_ground_voxel_grid = np.vstack(traversable_ground_voxel_grid)
         traversable_ground_points = traversable_ground_voxel_grid * voxel_res + self.min_bound
-        return self.fused_graph, traversable_ground_points
+        return fused_floor_graph, traversable_ground_points
 
     def get_pose_map_on_floor(
         self,
-        floor_height_range: Tuple[float, float],
+        floor_height_range: tuple[float, float],
         min_bound: np.ndarray,
         voxel_res: float = 0.1,
         camera_height_range: float = 0.3,
@@ -469,7 +572,7 @@ class FloorGraph:
         vicinity within a radius are 1. Otherwise pixel values are 0.
 
         Args:
-            floor_height_range (Tuple[float, float]): Height range for
+            floor_height_range (tuple[float, float]): Height range for
                 selecting poses on the floor.
             min_bound (np.ndarray): Minimum bound of the grid.
             voxel_res (float, optional): Voxel resolution. Defaults to 0.1.
@@ -513,7 +616,7 @@ class FloorGraph:
 
     def get_stairs_graph(
         self, floor_id: int, margin: float = 0.1, height_offset: float = 1.0, vis: bool = False
-    ) -> Tuple[nx.Graph, np.ndarray]:
+    ) -> tuple[nx.Graph, np.ndarray]:
         """Generate a graph representing the exploration trajectory on the stairs
         between two floors.
 
@@ -527,7 +630,7 @@ class FloorGraph:
                 Defaults to False.
 
         Returns:
-            Tuple[nx.Graph, np.ndarray]: A tuple containing the stairs graph
+            tuple[nx.Graph, np.ndarray]: A tuple containing the stairs graph
                 and the list of stair positions.
         """
 
@@ -551,6 +654,7 @@ class FloorGraph:
         stair_pos_list = np.concatenate([pose[:3, 3].reshape((1, 3)) for pose in stair_pose_list], axis=0) - np.array(
             [0, 0, height_offset]
         )
+        stair_pos_list = stair_pos_list.astype(float)
         stairs_graph = nx.Graph()
         last_node = None
         last_pos = None
@@ -560,7 +664,7 @@ class FloorGraph:
                 stairs_graph.add_edge(
                     last_node,
                     (pos[0], pos[1], str(floor_id)),
-                    dist=np.linalg.norm(pos - last_pos),
+                    dist=float(np.linalg.norm(pos - last_pos)),
                 )
             last_node = (pos[0], pos[1], str(floor_id))
             last_pos = pos
@@ -593,7 +697,6 @@ class FloorGraph:
 
         fig_free = main_free_map.copy().astype(np.uint8) * 255
         fig_free = cv2.cvtColor(fig_free, cv2.COLOR_GRAY2BGR)
-        vertices = []
         if height_map is None:
             height_map = np.ones_like(boundary_map) * self.min_bound[2]
         voronoi_graph = nx.Graph()
@@ -630,9 +733,9 @@ class FloorGraph:
                 voronoi_graph.add_node(
                     (src[0], src[1], floor_id),
                     pos=(
-                        src[0] * self.cell_size + self.min_bound[0],
-                        src[1] * self.cell_size + self.min_bound[1],
-                        height,
+                        float(src[0] * self.cell_size + self.min_bound[0]),
+                        float(src[1] * self.cell_size + self.min_bound[1]),
+                        float(height),
                     ),
                     floor_id=floor_id,
                 )
@@ -641,9 +744,9 @@ class FloorGraph:
                 voronoi_graph.add_node(
                     (tar[0], tar[1], floor_id),
                     pos=(
-                        tar[0] * self.cell_size + self.min_bound[0],
-                        tar[1] * self.cell_size + self.min_bound[1],
-                        height,
+                        float(tar[0] * self.cell_size + self.min_bound[0]),
+                        float(tar[1] * self.cell_size + self.min_bound[1]),
+                        float(height),
                     ),
                     floor_id=floor_id,
                 )
@@ -652,7 +755,7 @@ class FloorGraph:
                 voronoi_graph.add_edge(
                     (src[0], src[1], floor_id),
                     (tar[0], tar[1], floor_id),
-                    dist=np.linalg.norm(src - tar),
+                    dist=float(np.linalg.norm(src - tar)),
                 )
         if vis:
             cv2.imshow("voronoi_free", fig_free)
@@ -711,7 +814,7 @@ class FloorGraph:
 
         return new_graph
 
-    def _add_resampled_path(self, new_graph: nx.Graph, original_graph: nx.Graph, path: List, resampling_dist: float):
+    def _add_resampled_path(self, new_graph: nx.Graph, original_graph: nx.Graph, path: list, resampling_dist: float):
         """
         Helper to subdivide a long chain of nodes based on resampling_dist.
         """
@@ -724,7 +827,9 @@ class FloorGraph:
             edge_data = original_graph.edges[u, v]
             d = edge_data.get(
                 "dist",
-                np.linalg.norm(np.array(original_graph.nodes[u]["pos"]) - np.array(original_graph.nodes[v]["pos"])),
+                float(
+                    np.linalg.norm(np.array(original_graph.nodes[u]["pos"]) - np.array(original_graph.nodes[v]["pos"]))
+                ),
             )
 
             accumulated_dist += d
@@ -735,8 +840,8 @@ class FloorGraph:
                 if v not in new_graph:
                     new_graph.add_node(v, **original_graph.nodes[v])
 
-                dist_val = np.linalg.norm(
-                    np.array(new_graph.nodes[predecessor]["pos"]) - np.array(new_graph.nodes[v]["pos"])
+                dist_val = float(
+                    np.linalg.norm(np.array(new_graph.nodes[predecessor]["pos"]) - np.array(new_graph.nodes[v]["pos"]))
                 )
                 new_graph.add_edge(predecessor, v, dist=dist_val)
 
@@ -749,8 +854,10 @@ class FloorGraph:
             if last_node not in new_graph:
                 new_graph.add_node(last_node, **original_graph.nodes[last_node])
 
-            dist_val = np.linalg.norm(
-                np.array(new_graph.nodes[predecessor]["pos"]) - np.array(new_graph.nodes[last_node]["pos"])
+            dist_val = float(
+                np.linalg.norm(
+                    np.array(new_graph.nodes[predecessor]["pos"]) - np.array(new_graph.nodes[last_node]["pos"])
+                )
             )
             new_graph.add_edge(predecessor, last_node, dist=dist_val)
 
@@ -784,6 +891,36 @@ class FloorGraph:
         tar_graph.add_edge(
             stair_node,
             floor_node,
-            dist=np.linalg.norm(np.array(stair_node[:2]) - np.array(floor_node[:2])),
+            dist=float(np.linalg.norm(np.array(stair_node[:2]) - np.array(floor_node[:2]))),
         )
         return tar_graph
+
+    def plan_global_path(self, start_pos: np.ndarray, goal_pos: np.ndarray) -> list[np.ndarray]:
+        """Plan a global path from start to goal position using the fused floor graph.
+
+        Args:
+            start_pos (np.ndarray): Start position (x, y, z).
+            goal_pos (np.ndarray): Goal position (x, y, z).
+        Returns:
+            list[np.ndarray]: List of waypoints representing the planned path.
+        """
+        assert hasattr(self, "floor_graph"), "Floor graph not built yet."
+
+        floor_nodes = [(i, self.floor_graph.nodes[node]) for i, node in enumerate(self.floor_graph.nodes)]
+        floor_node_ids = [node[0] for node in floor_nodes]
+        floor_node_pos = np.array([node[1]["pos"] for node in floor_nodes])
+        dist_to_start = np.linalg.norm(floor_node_pos - start_pos.reshape((1, 3)), axis=1)
+        dist_to_goal = np.linalg.norm(floor_node_pos - goal_pos.reshape((1, 3)), axis=1)
+        closest_start_node_id = floor_node_ids[np.argmin(dist_to_start)]
+        closest_goal_node_id = floor_node_ids[np.argmin(dist_to_goal)]
+        start_node = list(self.floor_graph.nodes)[closest_start_node_id]
+        goal_node = list(self.floor_graph.nodes)[closest_goal_node_id]
+
+        try:
+            dijkstra_path = nx.dijkstra_path(self.floor_graph, start_node, goal_node, weight="dist")
+        except nx.NetworkXNoPath:
+            print("No path found between start and goal.")
+            return []
+
+        dijkstra_path_pos = [np.array(self.floor_graph.nodes[node]["pos"]) for node in dijkstra_path]
+        return [start_pos] + dijkstra_path_pos + [goal_pos]

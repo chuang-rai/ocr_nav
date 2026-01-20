@@ -1,0 +1,5 @@
+entrypoint: "rai_ai_core_library.detection.grounding_dino.GroundingDino"
+params:
+  model_id: "IDEA-Research/grounding-dino-base"
+  text_threshold: 0.3
+  box_threshold: 0.3

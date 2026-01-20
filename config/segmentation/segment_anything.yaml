@@ -1,0 +1,3 @@
+entrypoint: "rai_ai_core_library.segmentation.sam.Sam"
+params:
+  model_id: "facebook/sam-vit-base"

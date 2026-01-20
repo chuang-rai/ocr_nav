@@ -73,17 +73,17 @@ def main():
 
     # plot voronoi graph
     print("Plotting voronoi graphs...")
-    for edge in tqdm(ground_mesh.fused_graph.edges()):
+    for edge in tqdm(ground_mesh.floor_graph.edges()):
         src, tar = edge
-        src_pos = ground_mesh.fused_graph.nodes[src]["pos"]
-        tar_pos = ground_mesh.fused_graph.nodes[tar]["pos"]
+        src_pos = ground_mesh.floor_graph.nodes[src]["pos"]
+        tar_pos = ground_mesh.floor_graph.nodes[tar]["pos"]
         line = draw_line(
             np.array([src_pos[0], src_pos[1], src_pos[2]]),
             np.array([tar_pos[0], tar_pos[1], tar_pos[2]]),
         )
         plotter.add_mesh(line, line_width=4, color="green", render_lines_as_tubes=True)
-    for node in tqdm(ground_mesh.fused_graph.nodes()):
-        node_pos = ground_mesh.fused_graph.nodes[node]["pos"]
+    for node in tqdm(ground_mesh.floor_graph.nodes()):
+        node_pos = ground_mesh.floor_graph.nodes[node]["pos"]
         sphere = draw_sphere(
             np.array([node_pos[0], node_pos[1], node_pos[2]]),
             radius=0.1,
@@ -96,7 +96,7 @@ def main():
         combined = combined.extract_surface()
     combined.save("/tmp/ground_mesh_and_graph.ply")
     plotter.show()
-    FloorGraph.save_floor_graph(ground_mesh.fused_graph, "/tmp/ground_fused_graph.json")
+    FloorGraph.save_floor_graph(ground_mesh.floor_graph, "/tmp/ground_fused_graph.json")
     fused_graph = FloorGraph.load_floor_graph("/tmp/ground_fused_graph.json")
 
 

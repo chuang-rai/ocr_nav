@@ -1,19 +1,19 @@
-import os
 import argparse
+import rclpy
+import cv2
+import open3d as o3d
+from tqdm import tqdm
+import pyvista as pv
 import numpy as np
 from pathlib import Path
-from tqdm import tqdm
-import open3d as o3d
-import pyvista as pv
-import cv2
-from ocr_nav.utils.io_utils import FolderIO
+from ocr_nav.utils.segmentation_utils import GroundingDinoSamSegmenter
+from ocr_nav.utils.io_utils import BagIO
 from ocr_nav.scene_graph.floor_graph import FloorGraph
-from ocr_nav.utils.mapping_utils import project_points, downsample_point_cloud, points_to_mesh, segment_floor
+from ocr_nav.utils.mapping_utils import downsample_point_cloud, points_to_mesh
 from ocr_nav.utils.pyvista_vis_utils import (
     draw_cube,
     draw_line,
     draw_sphere,
-    draw_text,
     draw_point_cloud,
     draw_coordinate,
     create_plotter,
@@ -22,20 +22,30 @@ from ocr_nav.utils.pyvista_vis_utils import (
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Ground Mesh Construction with Folder")
+    config_dir = Path(__file__).parent.parent / "config"
+    grounding_dino_config_path = config_dir / "detection" / "grounding_dino.yaml"
+    sam_config_path = config_dir / "segmentation" / "segment_anything.yaml"
+
+    parser = argparse.ArgumentParser(description="Bag file path")
     parser.add_argument(
-        "--root_path",
+        "--bag_path",
         type=str,
-        default="/home/chuang/hcg/projects/ocr/data/eth_extracted_sync/rosbag2_2025_12_16-17_09_00_perception_suite",
-        help="Root path to the dataset folder",
+        default="/home/chuang/hcg/projects/ocr/data/eth_factory/rosbag2_2025_12_16-17_09_00_perception_suite_fixed_and_trimmed_1",
     )
     args = parser.parse_args()
+    segmenter = GroundingDinoSamSegmenter(
+        grounding_dino_config_path=grounding_dino_config_path.as_posix(),
+        sam_config_path=sam_config_path.as_posix(),
+        device="cuda",
+    )
 
-    root_path = Path(args.root_path)
-    folderio = FolderIO(root_path, depth_name="", camera_pose_name="", mask_name="masks_gd_sam2_s")
+    rclpy.init()
+    bag_path = Path(args.bag_path)
+    bagio = BagIO(bag_path.as_posix(), sample_every=10)
+    bagio.init_reader()
 
     ground_mesh = FloorGraph(voxel_size=0.2)
-    ground_mesh.build_floor_graph_with_folder(folderio, vis=False)
+    ground_mesh.build_floor_graph_with_bagio(bagio, segmenter, vis=False)
     stairs_pc_full = o3d.geometry.PointCloud()
     for stair_pc in ground_mesh.stairs_pc_list:
         floor_stairs = o3d.geometry.PointCloud()
@@ -98,10 +108,13 @@ def main():
     combined = pv.merge(meshes_to_combine)
     if not isinstance(combined, pv.PolyData):
         combined = combined.extract_surface()
-    combined.save(root_path / "ground_mesh_and_graph.ply")
+    combined.save("/tmp/ground_mesh_and_graph.ply")
     plotter.show()
-    FloorGraph.save_floor_graph(ground_mesh.floor_graph, root_path / "ground_fused_graph.json")
-    fused_graph = FloorGraph.load_floor_graph(root_path / "ground_fused_graph.json")
+    ground_mesh.save_floor_graph("/tmp/ground_fused_graph.json")
+    fused_graph = ground_mesh.load_floor_graph("/tmp/ground_fused_graph.json")
+
+    bagio.destroy_node()
+    rclpy.shutdown()
 
 
 if __name__ == "__main__":

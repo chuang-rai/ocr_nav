@@ -1,11 +1,11 @@
-import os
-from PIL import Image, ImageOps
+# Copyright (c) 2026 Robotics and AI Institute LLC dba RAI Institute. All rights reserved.
 from pathlib import Path
-from scipy.spatial.transform import Rotation as R
-import numpy as np
-from tqdm import tqdm
+
 import cv2
+import numpy as np
+from PIL import Image, ImageOps
 from plyfile import PlyData
+from scipy.spatial.transform import Rotation as R
 
 import rclpy
 from rclpy.node import Node
@@ -30,7 +30,7 @@ from tf2_ros import TransformException
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 
-from ocr_nav.utils.mapping_utils import transform_point_cloud
+from rai_floor_graph_construction.utils.mapping_utils import transform_point_cloud
 
 from typing import List, Tuple, Union
 
@@ -105,7 +105,7 @@ def load_lidar(lidar_path: Path) -> np.ndarray:
     return np.load(lidar_path)
 
 
-def load_livox_poses_timestamps(poses_path: Path) -> Tuple[np.ndarray, np.ndarray]:
+def load_livox_poses_timestamps(poses_path: Path) -> tuple[np.ndarray, np.ndarray]:
     """Load the Livox poses and corresponding timestamps from an npy file.
     Each row in the array is expected to be:
     (tx, ty, tz, qx, qy, qz, qw, timestamp)
@@ -175,7 +175,7 @@ def find_closest(sorted_arr: np.ndarray, target: float) -> int:
 
 def search_latest_poses_within_timestamp_range(
     poses: np.ndarray, timestamps: np.ndarray, start_timestamp_sec_nano: str
-) -> Union[Tuple[np.ndarray, np.int64], Tuple[None, None]]:
+) -> tuple[np.ndarray, np.int64] | tuple[None, None]:
     """Search for the latest pose within a given timestamp range.
 
     Args:
@@ -184,7 +184,8 @@ def search_latest_poses_within_timestamp_range(
         start_timestamp_sec_nano (str): Start timestamp in the format "seconds_nanoseconds".
 
     Returns:
-        Union[Tuple[np.ndarray, np.int64], Tuple[None, None]]: Tuple containing the latest pose and its timestamp, or (None, None) if not found.
+        Union[Tuple[np.ndarray, np.int64], Tuple[None, None]]: Tuple containing the latest
+            pose and its timestamp, or (None, None) if not found.
     """
     ids = np.argsort(timestamps)
     sorted_timestamps = timestamps[ids]
@@ -200,7 +201,6 @@ def search_latest_poses_within_timestamp_range(
 
 
 def load_ply_point_cloud(ply_path: Path) -> np.ndarray:
-
     plydata = PlyData.read(ply_path)
     vertex_data = plydata["vertex"].data
     points = np.vstack([vertex_data["x"], vertex_data["y"], vertex_data["z"]]).T
@@ -599,7 +599,7 @@ class SubscriberIO(Node):
 
         # 2. Standard Topic Subscription
         self.sub_camera_info = self.create_subscription(
-            CameraInfo, "/zed/zed_node/left/color/rect/image/camera_info", self.camera_info_callback, 10
+            CameraInfo, "/zed/zed_node/left/color/rect/image/camera_info", self.camera_info_callback, 100
         )
         self.sub_livox = Subscriber(self, PointCloud2, "/glim_ros/points_corrected")
         self.sub_rslidar = Subscriber(self, PointCloud2, "/rslidar_points")
@@ -607,7 +607,10 @@ class SubscriberIO(Node):
         self.pub_acc_livox = self.create_publisher(PointCloud2, "/acc_livox", 10)
 
         self.synchronizer = ApproximateTimeSynchronizer(
-            [self.sub_livox, self.sub_rslidar, self.sub_mask], queue_size=10, slop=0.1
+            [self.sub_livox, self.sub_rslidar, self.sub_mask],
+            queue_size=1000,
+            slop=5,
+            # [self.sub_livox, self.sub_rslidar], queue_size=100, slop=1
         )
         self.synchronizer.registerCallback(self.synchronized_callback)
 
