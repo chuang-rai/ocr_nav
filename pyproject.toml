@@ -38,6 +38,8 @@ dependencies = [
     "pyvista",
     "plyfile",
     "open3d",
+    "kuzu",
+    "sentence-transformers",
 ]
 
 [tool.setuptools.packages.find]

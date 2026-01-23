@@ -21,6 +21,7 @@ from ocr_nav.utils.pyvista_vis_utils import (
     draw_line,
     draw_sphere,
     draw_text,
+    draw_image,
     draw_point_cloud,
     draw_coordinate,
     create_plotter,
@@ -42,13 +43,15 @@ def main():
     intr_mat = load_intrinsics(root_dir / "intrinsics.txt")
     robosense2zed_left_mat_path = root_dir / "tf_robosense_e1r_to_zed_left_camera_optical_frame.txt"
     tf_rs2zed_left = load_pose(robosense2zed_left_mat_path)
+    img_paths_list = []
     textmap = TextGraph()
     for pi, p in enumerate(sorted(ocr_dir.iterdir())):
         print(f"Processing frame {pi}")
         frame_id = int(p.stem.split("_")[-1])
 
+        image_path = root_dir / "left" / f"image_{frame_id}.jpg"
+        img_paths_list.append(image_path)
         if pi == 0 or debug:
-            image_path = root_dir / "left" / f"image_{frame_id}.jpg"
             img = load_image(image_path)
             assert img is not None
             h, w, _ = np.array(img).shape
@@ -217,8 +220,19 @@ def main():
                 sphere = draw_sphere(point_3d, radius=0.03)
                 plotter.add_mesh(sphere, color="red")
 
-                text_actor = draw_text(text, point_3d, height=0.2, normal=np.array((0, 1, 0)))
+                text_actor = draw_text(text, point_3d, height=0.5, normal=np.array((0, 1, 0)))
                 plotter.add_mesh(text_actor, color="red")
+
+                frame_ids_list = list(textbag.text_dict.values())
+                first_frame_id = frame_ids_list[0][0]
+                img_path = img_paths_list[first_frame_id]
+                img = load_image(img_path)
+                assert img is not None
+                img_np = np.array(img)
+                plotter = draw_image(plotter, img_np, position=point_3d + np.array([0, 0, 3]), scale=0.004)
+                line_img_text = draw_line(point_3d, point_3d + np.array([0, 0, 3]))
+                plotter.add_mesh(line_img_text, color="purple", line_width=2)
+
     # label_dict = {}
     print("Start adding edges...")
     for edge in textmap.G.edges():
@@ -226,23 +240,23 @@ def main():
         if isinstance(node1, int) and isinstance(node2, int):
             pose1: Pose = textmap.G.nodes[node1]["pose"]
             pose2: Pose = textmap.G.nodes[node2]["pose"]
-            line = draw_line(pose1.pose[:3, 3], pose2.pose[:3, 3], color="red", line_width=2)
-            plotter.add_mesh(line)
+            line = draw_line(pose1.pose[:3, 3], pose2.pose[:3, 3])
+            plotter.add_mesh(line, color="red", line_width=2)
         elif isinstance(node1, int) and isinstance(node2, str):
             pose: Pose = textmap.G.nodes[node1]["pose"]
             textbag: TextBag = textmap.G.nodes[node2]["textbag"]
             if textbag.pc is not None:
                 for point_3d in textbag.pc:
-                    line = draw_line(pose.pose[:3, 3], point_3d, color="green", line_width=2)
-                    plotter.add_mesh(line)
+                    line = draw_line(pose.pose[:3, 3], point_3d)
+                    plotter.add_mesh(line, color="green", line_width=2)
         elif isinstance(node1, str) and isinstance(node2, int):
             pose: Pose = textmap.G.nodes[node2]["pose"]
             textbag: TextBag = textmap.G.nodes[node1]["textbag"]
             if textbag.pc is not None:
                 mean_pc = textbag.pc.mean(axis=0)
                 texts = "/".join(list(textbag.text_dict.keys()))
-                line = draw_line(pose.pose[:3, 3], mean_pc, color="magenta", line_width=2)
-                plotter.add_mesh(line)
+                line = draw_line(pose.pose[:3, 3], mean_pc)
+                plotter.add_mesh(line, color="magenta", line_width=2)
 
     plotter.show()
 

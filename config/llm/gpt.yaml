@@ -1,0 +1,3 @@
+entrypoint: "rai_ai_core_library.llm.gpt.GptQueryInterface"
+params:
+  model_name: "gpt-5.2"

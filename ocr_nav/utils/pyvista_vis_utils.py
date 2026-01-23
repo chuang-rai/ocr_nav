@@ -62,6 +62,7 @@ def draw_coordinate(origin: np.ndarray, size: float = 0.1) -> pv.Actor:
 def create_plotter() -> pv.Plotter:
     plotter = pv.Plotter()
     plotter.set_background((1.0, 1.0, 1.0))  # type: ignore
+    plotter.window_size = [1920, 1080]
     return plotter
 
 
@@ -83,3 +84,11 @@ def convert_open3d_mesh_to_pyvista(mesh: o3d.geometry.TriangleMesh) -> pv.PolyDa
     faces_pv = np.hstack((np.full((faces.shape[0], 1), 3), faces)).flatten()
     pv_mesh = pv.PolyData(vertices, faces_pv)
     return pv_mesh
+
+
+def draw_image(plotter: pv.Plotter, image: np.ndarray, position: List[float], scale: float = 1.0) -> pv.Plotter:
+    texture = pv.Texture(image)
+    plane = pv.Plane(center=position, direction=(0, 1, 0), i_size=image.shape[1] * scale, j_size=image.shape[0] * scale)
+    plane.rotate_y(90, point=position, inplace=True)
+    plotter.add_mesh(plane, texture=texture)
+    return plotter

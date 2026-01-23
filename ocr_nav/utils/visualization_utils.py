@@ -1,4 +1,5 @@
 import numpy as np
+import cv2
 from PIL import Image, ImageDraw, ImageFont
 import open3d as o3d
 from typing import List, Tuple
@@ -112,3 +113,29 @@ def draw_line(
     line_set.lines = o3d.utility.Vector2iVector(lines)
     line_set.colors = o3d.utility.Vector3dVector(colors)
     return line_set
+
+
+def draw_bounding_boxes_on_image_np(image: np.ndarray, boxes: list, normalize_max: float = 1) -> np.ndarray:
+    image_with_boxes = image.copy()
+    height, width = image.shape[:2]
+    for box_info in boxes:
+        box = box_info["bounding_box"]
+        x_min, y_min, x_max, y_max = box
+        cv2.rectangle(
+            image_with_boxes,
+            (int(x_min / normalize_max * width), int(y_min / normalize_max * height)),
+            (int(x_max / normalize_max * width), int(y_max / normalize_max * height)),
+            color=(0, 255, 0),
+            thickness=2,
+        )
+        label = box_info["label"]
+        cv2.putText(
+            image_with_boxes,
+            label,
+            (int(x_min / normalize_max * width), int(y_min / normalize_max * height) - 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 255, 0),
+            2,
+        )
+    return image_with_boxes

@@ -27,5 +27,7 @@ dependencies:
       - pyvista
       - plyfile
       - open3d
+      - kuzu
+      - sentence-transformers
 
 prefix: /home/chuang/miniforge3/envs/ocr_nav

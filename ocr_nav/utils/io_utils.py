@@ -1,4 +1,6 @@
 import os
+import yaml
+import json
 from PIL import Image, ImageOps
 from pathlib import Path
 from scipy.spatial.transform import Rotation as R
@@ -207,6 +209,47 @@ def load_ply_point_cloud(ply_path: Path) -> np.ndarray:
     return points  # (N, 3)
 
 
+def encode_image_to_bytes(image: np.ndarray) -> bytes:
+    success, buffer = cv2.imencode(".jpg", image)
+    if not success:
+        raise ValueError("Image encoding failed.")
+    return buffer.tobytes()
+
+
+def encode_image_to_base64_string(image: np.ndarray) -> str:
+    success, buffer = cv2.imencode(".jpg", image)
+    if not success:
+        raise ValueError("Image encoding failed.")
+    img_bytes = buffer.tobytes()
+    import base64
+
+    img_base64 = base64.b64encode(img_bytes).decode("utf-8")
+    return img_base64
+
+
+def waypoints_to_yaml(path: Path, waypoints: np.ndarray) -> None:
+    waypoints_list = []
+    for waypoint in waypoints:
+        position = waypoint[:3].tolist()
+        orientation = waypoint[3:].tolist()  # Assuming quaternion (w, x, y, z)
+        waypoints_list.append(
+            {
+                "position": position,
+                "orientation": orientation,
+                "tags": [],
+            }
+        )
+
+    yaml_dict = {
+        "interpolation_method": "none",
+        "max_distance": 0.1,
+        "waypoints": waypoints_list,
+    }
+
+    with open(path, "w") as f:
+        yaml.dump(yaml_dict, f)
+
+
 class FolderIO:
     """Class to handle I/O operations for a folder containing various sensor data.
     The folder structure is expected to be:
@@ -238,6 +281,7 @@ class FolderIO:
         livox_name: str = "livox",
         rslidar_name: str = "rslidar",
         mask_name: str = "masks_sam2_s",
+        annotation_name: str = "qwen3vl_annotations",
     ):
         self.root_dir = root_dir
         self.img_dir = root_dir / img_name
@@ -246,7 +290,7 @@ class FolderIO:
         self.livox_dir = root_dir / livox_name
         self.rslidar_dir = root_dir / rslidar_name
         self.mask_dir = root_dir / mask_name
-
+        self.annotation_dir = root_dir / annotation_name
         self.timestamp_list = ["_".join(x.stem.split("_")[-2:]) for x in sorted(self.img_dir.iterdir())]
         self.len = len(self.timestamp_list)
 
@@ -300,6 +344,16 @@ class FolderIO:
         mask_path = self.mask_dir / f"mask_{timestamp}.npy"
         mask = load_masks(mask_path)
         return mask
+
+    def get_annotation(self, index: int) -> dict:
+        timestamp = self.timestamp_list[index]
+        annotation_path = self.annotation_dir / f"qwen3vl_{timestamp}.json"
+        if not annotation_path.exists():
+            return {}
+
+        with open(annotation_path, "r") as f:
+            annotation = json.load(f)
+        return annotation
 
     def get_intrinsics(self) -> np.ndarray:
         intrinsics_path = self.root_dir / "intrinsics.txt"
