@@ -9,10 +9,10 @@ dependencies:
   - pip:
       - setuptools>=80.9.0
       - --extra-index-url https://download.pytorch.org/whl/cu118
-      - torch==2.6.0
-      - torchvision==0.21.0
-      - torchaudio==2.6.0
-      - https://github.com/vllm-project/vllm/releases/download/v0.8.5/vllm-0.8.5+cu118-cp38-abi3-manylinux1_x86_64.whl
+      - torch
+      - torchvision
+      - torchaudio
+      # - https://github.com/vllm-project/vllm/releases/download/v0.8.5/vllm-0.8.5+cu118-cp38-abi3-manylinux1_x86_64.whl
       - transformers>=4.46.3
       - tokenizers>=0.20.3
       - PyMuPDF
@@ -21,7 +21,7 @@ dependencies:
       - easydict
       - addict 
       - Pillow
-      - numpy
+      - numpy==1.26.4
       - scipy
       - tqdm
       - pyvista
@@ -29,5 +29,6 @@ dependencies:
       - open3d
       - kuzu
       - sentence-transformers
+      - accelerate
 
 prefix: /home/chuang/miniforge3/envs/ocr_nav

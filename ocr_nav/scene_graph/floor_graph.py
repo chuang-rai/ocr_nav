@@ -29,6 +29,7 @@ from ocr_nav.utils.io_utils import (
     SubscriberIO,
     BagIO,
 )
+from ocr_nav.utils.pyvista_vis_utils import create_plotter, PointCloudBoxSelector
 import rclpy
 
 
@@ -240,7 +241,7 @@ class FloorGraph:
                 data = bagio.get_next_sync_data()
                 if data is None:
                     continue
-                pc_livox, pc_rslidar, img_np, livox_pose = data
+                pc_livox, pc_rslidar, img_np, livox_pose, t_nanosec = data
 
                 mask_np = segmenter.segment(img_np, text_prompt="ground")
 
@@ -263,6 +264,119 @@ class FloorGraph:
         self.floor_graph, self.full_ground_pc = self.build_floor_graph_with_ground_points(
             floor_seg_resolution, obstacle_height_range, vis
         )
+        return self.floor_graph, self.full_ground_pc
+
+    def build_floor_graph_with_point_cloud_and_poses(
+        self,
+        point_cloud: np.ndarray,
+        poses: np.ndarray,
+        close_kernel_size: int = 5,
+        vis: bool = False,
+    ):
+        self.pose_list = poses
+        self.compute_grid_parameters(to_o3d_pc(point_cloud), voxel_res=self.cell_size)
+        print("Initial inspection of the point cloud...")
+        selector = PointCloudBoxSelector(point_cloud)
+        floor_num = input("Input the number of floors: ")
+        assert floor_num.isdigit(), "Please input a valid integer for the number of floors."
+        floor_num = int(floor_num)
+        floor_pc_list = []
+        obstacle_pc_list = []
+        traversable_ground_voxel_grid = []
+        self.stairs_pc_list = []
+        self.stairs_graph_list = []
+        for floor_i in range(floor_num):
+            print(f"Select bounding box for floor points on floor {floor_i}. Press 'q' to confirm selection.")
+            selector = PointCloudBoxSelector(point_cloud, selector.selected_bound)
+            floor_pc_list.append(np.array(selector.clipped_pc.points))
+            floor_height_range = np.array(selector.selected_bound[4:6])
+            floor_height_grid_range = (floor_height_range - self.min_bound[2]) / self.cell_size
+            print(f"Select bounding box for obstacle points on floor {floor_i}. Press 'q' to confirm selection.")
+            selector = PointCloudBoxSelector(point_cloud, selector.selected_bound)
+            obstacle_pc_list.append(np.array(selector.clipped_pc.points))
+            obstacle_height_range = np.array(selector.selected_bound[4:6])
+            obstacle_height_grid_range = (obstacle_height_range - self.min_bound[2]) / self.cell_size
+
+            obstacle_mask = (self.full_voxel_grid[:, 2] >= obstacle_height_grid_range[0]) & (
+                self.full_voxel_grid[:, 2] < obstacle_height_grid_range[1]
+            )
+            ground_mask = (self.full_voxel_grid[:, 2] >= floor_height_grid_range[0]) & (
+                self.full_voxel_grid[:, 2] < floor_height_grid_range[1]
+            )
+
+            floor_obstacle_voxels = self.full_voxel_grid[obstacle_mask, :]
+            floor_ground_voxels = self.full_voxel_grid[ground_mask, :]
+
+            floor_obstacle_map = np.zeros((self.x_range, self.y_range), dtype=bool)
+            floor_obstacle_map[floor_obstacle_voxels[:, 0].astype(int), floor_obstacle_voxels[:, 1].astype(int)] = True
+            floor_ground_map = np.zeros((self.x_range, self.y_range), dtype=bool)
+            floor_ground_map[floor_ground_voxels[:, 0].astype(int), floor_ground_voxels[:, 1].astype(int)] = True
+            if vis:
+                cv2.imshow("floor_obstacle_map", floor_obstacle_map.astype(np.uint8) * 255)
+                cv2.imshow("floor_ground_map", floor_ground_map.astype(np.uint8) * 255)
+                cv2.waitKey()
+
+            # project poses onto a BEV and treat their vicinity as traversable
+            pose_map_floor = self.get_pose_map_on_floor(
+                (floor_height_range[0], obstacle_height_range[1]),
+                self.min_bound,
+                voxel_res=self.cell_size,
+                camera_height_range=1.2,
+                radius=1,
+                vis=vis,
+            )
+
+            # traversable BEV = ground BEV + pose BEV - obstacle BEV
+            floor_obstacle_map = binary_closing(floor_obstacle_map, structure=np.ones((3, 3)), iterations=1)
+            if vis:
+                cv2.imshow("closed_floor_obstacle_map", floor_obstacle_map.astype(np.uint8) * 255)
+                cv2.waitKey()
+            traversable_map = (floor_ground_map.astype(bool) | pose_map_floor) & (~floor_obstacle_map.astype(bool))
+            traversable_map = binary_closing(
+                traversable_map, structure=np.ones((close_kernel_size, close_kernel_size)), iterations=1
+            )
+
+            traversable_map = get_largest_region(traversable_map)
+            if vis:
+                cv2.imshow("traversable_map", traversable_map.astype(np.uint8) * 255)
+                cv2.waitKey()
+
+            height_map = np.ones_like(traversable_map, dtype=np.float32) * (np.mean(floor_height_range))
+            voronoi_graph = self.get_voronoi_graph(
+                traversable_map, floor_id=str(floor_i), height_map=height_map, vis=vis
+            )
+            sparse_voronoi_graph = self.sparsify_graph(voronoi_graph, resampling_dist=0.4)
+            self.voronoi_graphs[floor_i] = sparse_voronoi_graph
+
+            traversable_x, traversable_y = np.where(traversable_map)
+            traversable_ground_voxels = np.concatenate(
+                [
+                    traversable_x.reshape((-1, 1)),
+                    traversable_y.reshape((-1, 1)),
+                    np.ones((len(traversable_x), 1))
+                    * (np.mean(floor_height_range) - self.min_bound[2])
+                    / self.cell_size,
+                ],
+                axis=1,
+            )  # (N, 3)
+            traversable_ground_voxel_grid.append(traversable_ground_voxels)
+
+            # build stairs graph between this floor and the next floor
+            if floor_i + 1 < len(floor_pc_list):
+                stairs_graph, stair_pos_list = self.get_stairs_graph(floor_i, margin=0.5, height_offset=1.0, vis=vis)
+                self.stairs_pc_list.append(stair_pos_list)
+                self.stairs_graph_list.append(stairs_graph)
+
+        # connect floor voronois with the stairs graph
+        fused_floor_graph = self.voronoi_graphs[0]
+        for floor_i, stair_graph in enumerate(self.stairs_graph_list):
+            fused_floor_graph = self.connect_voronoi_graphs(self.stairs_graph_list[floor_i], fused_floor_graph)
+            fused_floor_graph = self.connect_voronoi_graphs(fused_floor_graph, self.voronoi_graphs[floor_i + 1])
+
+        traversable_ground_voxel_grid = np.vstack(traversable_ground_voxel_grid)
+        traversable_ground_points = traversable_ground_voxel_grid * self.cell_size + self.min_bound
+        self.full_ground_pc = to_o3d_pc(traversable_ground_points)
+        self.floor_graph = fused_floor_graph
         return self.floor_graph, self.full_ground_pc
 
     def accumulate_ground_points(

@@ -21,8 +21,8 @@ def main():
     while bagio.has_next():
         data = bagio.get_next_sync_data()
         if data is None:
-            break
-        livox_pc_np, rslidar_pc_np, img_np, livox_pose = data
+            continue
+        pc_livox, pc_rslidar, img_np, livox_pose, t_nanosec = data
         cv2.imshow("Image", cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR))
         cv2.waitKey(1)
 

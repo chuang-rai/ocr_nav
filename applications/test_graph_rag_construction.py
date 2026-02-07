@@ -12,7 +12,8 @@ def main():
     parser.add_argument(
         "--root_path",
         type=str,
-        default="/home/chuang/hcg/projects/ocr/data/eth_extracted_sync/rosbag2_2025_12_16-17_09_00_perception_suite",
+        # default="/home/chuang/hcg/projects/ocr/data/eth_extracted_sync/rosbag2_2025_12_16-17_09_00_perception_suite",
+        default="",
         help="Root path to the dataset folder",
     )
     args = parser.parse_args()

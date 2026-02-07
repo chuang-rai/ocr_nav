@@ -1,0 +1,29 @@
+# Copyright (c) 2026 Robotics and AI Institute LLC dba RAI Institute. All rights reserved.
+bag_path: /home/chuang/hcg/projects/control_suite/temp/lab_downstairs_test_2/rosbag2_2026_02_02-17_46_19_perception_suite_fix_trimmed_glim
+output_dir: /home/chuang/hcg/projects/control_suite/temp/lab_downstairs_test_2/
+cache_dir: /home/chuang/hcg/projects/control_suite/temp/lab_downstairs_test_2/floor_graph_cache
+voxel_size: 0.1                          # the voxel size for downsampling the point cloud and constructing the floor graph
+cache_segmentation: true                 # whether to cache the segmentation results
+floor_seg_resolution: 0.1                # the bin size for floor height histogram
+min_floor_points_num: 0                  # minimum number of points in floor height bin required to consider a floor
+relative_percentile: 50                  # minimum number of points in floor height bin defined as (max_bin_count * relative_percentile / 100)
+obstacle_height_range: [0.4, 1.7]        # height range (in meters) above the floor height to consider as obstacles
+pose_height_margin: 0.2                  # margin (in meters) to add to the dominant pose height to consider as poses on the floor (not on the stairs)
+pose_radius_as_traversable: 1            # radius (in meters) around a pose to consider as traversable area
+vis: false                               # whether to visualize the floor graph construction process
+
+bagio:
+  lidar_topic_list:                      # list of LiDAR topics to read from the bag
+    - /glim_ros/points_corrected
+    - /rslidar_points
+  anchor_lidar_id: 0                     # index of the anchor LiDAR in the lidar_topic_list whose frame is used as the reference frame
+  lidar_frame_ids:                       # list of LiDAR frame IDs corresponding to the LiDAR topics for TF lookup
+    - livox_mid360_imu
+    - robosense_e1r
+  rgb_topic: /zed/zed_node/left/color/rect/image/compressed              # RGB image topic
+  camera_info_topic: /zed/zed_node/left/color/rect/image/camera_info     # Camera info topic
+  camera_frame_id: zed_left_camera_optical_frame                         # Camera frame ID
+  world_frame_id: odom_glim                                              # World frame ID
+  max_bag_total_time_sec: 3600                                           # maximum total time (in seconds) to read from the bag
+  sample_every: 10                                                       # sample every N synchronized messages
+  max_sync_latency_sec: 0.2                                              # maximum synchronization latency (in seconds)

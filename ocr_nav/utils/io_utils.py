@@ -309,9 +309,9 @@ class FolderIO:
         else:
             return True
 
-    def get_image(self, index: int) -> Image.Image:
+    def get_image(self, index: int, prefix: str = "image_") -> Image.Image:
         timestamp = self.timestamp_list[index]
-        image_path = self.img_dir / f"image_{timestamp}.jpg"
+        image_path = self.img_dir / f"{prefix}{timestamp}.jpg"
         image = load_image(image_path)
         return image
 
@@ -371,15 +371,96 @@ class FolderIO:
         return tf
 
 
+def convert_pc2_to_numpy(cloud_msg: PointCloud2) -> np.ndarray:
+    # Returns a structured NumPy array, typically (N,) with fields 'x', 'y', 'z', etc.
+    structured_array = pc2.read_points(cloud_msg, field_names=("x", "y", "z"))
+
+    # You may need to restructure it into an N x 3 array:
+    points = np.stack(
+        [structured_array["x"], structured_array["y"], structured_array["z"]],
+        axis=-1,
+    )
+
+    return points
+
+
+def convert_numpy_to_pc2(points: np.ndarray, frame_id: str, stamp: Time) -> PointCloud2:
+    header = Header()
+    header.stamp = stamp
+    header.frame_id = frame_id
+    pc2_msg = pc2.create_cloud_xyz32(header, points.tolist())
+    return pc2_msg
+
+
+def convert_compressed_image_to_numpy(compressed_image_msg: ROSImage) -> np.ndarray:
+    try:
+        np_arr = np.frombuffer(compressed_image_msg.data, np.uint8)
+
+        # 2. Decode the image into a color (BGR) numpy array
+        cv_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+    except CvBridgeError as e:
+        print(f"CvBridge Error: {e}")
+        return None
+    return cv_image
+
+
+def convert_image_to_numpy(image_msg: ROSImage) -> np.ndarray:
+    bridge = CvBridge()
+    try:
+        cv_image = bridge.imgmsg_to_cv2(image_msg, desired_encoding="passthrough")
+    except CvBridgeError as e:
+        print(f"CvBridge Error: {e}")
+        return None
+    return cv_image
+
+
+def msg_time_within_latency(msg_time: Time, reference_time: Time, max_latency_s: float) -> bool:
+    time_diff = abs((msg_time.sec - reference_time.sec) + (msg_time.nanosec - reference_time.nanosec) / 1_000_000_000)
+    return time_diff <= max_latency_s
+
+
 class BagIO(Node):
+    """BagIO is a ROS2 node for reading and processing data from a rosbag.
+    Provide camera and lidar data topics to the class for synchronized data reading.
+    The synchronization is based on the anchor lidar topic specified by the user.
+
+    Usage:
+        import rclpy
+        rclpy.init()
+        bag_io_node = BagIO(
+            bag_path=Path("/path/to/your.bag"),
+            rgb_topic="/zed/zed_node/left/color/rect/image/compressed",
+            camera_info_topic="/zed/zed_node/left/color/rect/image/camera_info",
+            anchor_lidar_id=0,
+            lidar_topic_list=["/glim_ros/points_corrected", "/rslidar_points"],
+            lidar_frame_ids=["livox_mid360_imu", "robosense_e1r"],
+            camera_frame_id="zed_left_camera_optical_frame",
+            max_bag_total_time=3600,
+            sample_every=1,
+        )
+        bag_io_node.init_reader()
+        while bag_io_node.has_next():
+            data = bag_io_node.get_next_sync_data(max_latency_s=0.2)
+            if data is not None:
+                lidar_pc_list, img_np, anchor_lidar_pose, timenano = data
+            # Process the synchronized data as needed
+
+
+    Args:
+        Node (_type_): _description_
+    """
+
     def __init__(
         self,
         bag_path: Path,
         rgb_topic: str = "/zed/zed_node/left/color/rect/image/compressed",
         camera_info_topic: str = "/zed/zed_node/left/color/rect/image/camera_info",
-        livox_topic: str = "/glim_ros/points_corrected",
-        rslidar_topic: str = "/rslidar_points",
-        buffer_time_sec: int = 3600,
+        camera_frame_id: str = "zed_left_camera_optical_frame",
+        anchor_lidar_id: int = 0,
+        lidar_topic_list: list[str] = ["/glim_ros/points_corrected", "/rslidar_points"],
+        lidar_frame_ids: list[str] = ["livox_mid360_imu", "robosense_e1r"],
+        world_frame_id: str = "odom_glim",
+        max_bag_total_time: int = 3600,
         sample_every: int = 1,
     ):
         super().__init__("bagio_node")
@@ -390,14 +471,19 @@ class BagIO(Node):
         # 1. Define the topics we care about
         self.rgb_topic = rgb_topic
         self.camera_info_topic = camera_info_topic
-        self.livox_lidar_topic = livox_topic
-        self.robosense_lidar_topic = rslidar_topic  # tf: robosense_e1r -> zed_left_camera_optical_frame
+        self.camera_frame_id = camera_frame_id
+
+        self.anchor_lidar_id = anchor_lidar_id
+        self.lidar_topic_list = lidar_topic_list
+        self.non_anchor_lidar_topic_list = [topic for i, topic in enumerate(lidar_topic_list) if i != anchor_lidar_id]
+        self.lidar_frame_ids = lidar_frame_ids
+
+        self.world_frame_id = world_frame_id
 
         self.target_topics = {
             self.camera_info_topic,
             self.rgb_topic,
-            self.livox_lidar_topic,
-            self.robosense_lidar_topic,
+            *self.lidar_topic_list,
         }
 
         # 2. Set up storage and converter options
@@ -408,13 +494,11 @@ class BagIO(Node):
 
         # 3. Set up some flags for one-time saving
         self.intrinsic_saved = False
-        self.rslidar2left_img_tf_saved = False
-        self.livox2left_img_tf_saved = False
 
         # 4. Preload TF Buffer
-        self.preload_tf_buffer(buffer_time_sec=buffer_time_sec)
+        self._preload_tf_buffer(buffer_time_sec=max_bag_total_time)
 
-    def preload_tf_buffer(self, buffer_time_sec: int = 3600):
+    def _preload_tf_buffer(self, buffer_time_sec: int = 3600):
         # 1. Initialize TF Buffer and Listener (requires the node)
         unlimited_duration = rclpy.duration.Duration(seconds=buffer_time_sec)
         self.tf_buffer = Buffer(node=self, cache_time=unlimited_duration)
@@ -434,10 +518,8 @@ class BagIO(Node):
         self.total_duration_sec = 0
         self.start_sec = None
         while reader.has_next():
-
             topic, data, t_nanosec = reader.read_next()
             timestamp_sec = t_nanosec // 1_000_000_000
-            timestamp_nanosec = t_nanosec % 1_000_000_000
             if self.start_sec is None:
                 self.start_sec = timestamp_sec
 
@@ -466,9 +548,8 @@ class BagIO(Node):
             pbar.update(timestamp_sec - self.start_sec - pbar.n)
             pbar.set_description(f"Loading TFs for time: {timestamp_sec}s")
 
-        # save the tf from lidar to zed left camera frame
-        self.save_livox2left_img_tf()
-        self.save_rslidar2left_img_tf()
+        # save the tf from lidar to camera frame
+        self.save_lidar2camera_tfs()
 
     # Helper function to get the message type (Python class) from its name
     def get_msg_type(self, topic_name):
@@ -477,18 +558,6 @@ class BagIO(Node):
             return get_message(self.type_map[topic_name])
         except Exception:
             return None
-
-    def convert_pc2_to_numpy(self, cloud_msg: PointCloud2) -> np.ndarray:
-        # Returns a structured NumPy array, typically (N,) with fields 'x', 'y', 'z', etc.
-        structured_array = pc2.read_points(cloud_msg, field_names=("x", "y", "z"))
-
-        # You may need to restructure it into an N x 3 array:
-        points = np.stack(
-            [structured_array["x"], structured_array["y"], structured_array["z"]],
-            axis=-1,
-        )
-
-        return points
 
     def save_intrinsics(self, camera_info: CameraInfo) -> None:
         assert isinstance(camera_info, CameraInfo)
@@ -502,26 +571,17 @@ class BagIO(Node):
     def get_intrinsics(self) -> np.ndarray:
         return self.intrinsics
 
-    def get_image_size(self) -> Tuple[int, int]:
+    def get_image_size(self) -> tuple[int, int]:
         return self.h, self.w
 
-    def save_livox2left_img_tf(self) -> None:
-        if self.livox2left_img_tf_saved:
-            return
-        self.livox2left_img_tf = self.lookup_tfs("zed_left_camera_optical_frame", "livox_mid360", rclpy.time.Time())
-        self.livox2left_img_tf_saved = True
+    def save_lidar2camera_tfs(self) -> None:
+        self.lidar2camera_tfs = []
+        for lidar_frame_id in self.lidar_frame_ids:
+            tf = self.lookup_tfs(self.camera_frame_id, lidar_frame_id, rclpy.time.Time())
+            self.lidar2camera_tfs.append(tf)
 
-    def save_rslidar2left_img_tf(self) -> None:
-        if self.rslidar2left_img_tf_saved:
-            return
-        self.rslidar2left_img_tf = self.lookup_tfs("zed_left_camera_optical_frame", "robosense_e1r", rclpy.time.Time())
-        self.rslidar2left_img_tf_saved = True
-
-    def get_livox2left_camera_tf(self) -> np.ndarray:
-        return self.livox2left_img_tf
-
-    def get_rslidar2left_camera_tf(self) -> np.ndarray:
-        return self.rslidar2left_img_tf
+    def get_lidar2camera_tfs(self) -> list[np.ndarray]:
+        return self.lidar2camera_tfs
 
     def init_reader(self) -> None:
         self.get_logger().info(f"Opening bag file at: {self.bag_path}")
@@ -536,29 +596,34 @@ class BagIO(Node):
     def has_next(self) -> bool:
         return self.reader.has_next()
 
-    def get_next_sync_data(self) -> Union[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray], None]:
-        """Get the next synchronized data from Livox, RoboSense, and Livox's pose in Glim frame
+    def get_next_sync_data(
+        self, max_latency_s: float = 0.2
+    ) -> tuple[list[np.ndarray], np.ndarray, np.ndarray, np.ndarray] | None:
+        """Get the next synchronized data from lidar_topic_list and anchor lidar's pose in Glim frame
 
         Returns:
-            Union[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray], None]:
+            Union[Tuple[list[np.ndarray], np.ndarray, np.ndarray, np.ndarray], None]:
             Tuple containing:
-                - livox_pc_np (np.ndarray): (N, 3) Livox point cloud.
-                - rslidar_pc_np (np.ndarray): (M, 3) RoboSense point cloud.
+                - lidar_pc_list (list[np.ndarray]): List of point clouds from the lidars. Each element is (N, 3).
                 - img_np (np.ndarray): (H, W, 3) RGB image.
-                - livox_pose (np.ndarray): (4, 4) Livox pose in Glim frame.
+                - anchor_lidar_pose (np.ndarray): (4, 4) anchor lidar pose in Glim frame.
+                - timenano (np.ndarray): Timestamp in nanoseconds.
         """
         if not self.reader.has_next():
             return None
 
         latest_msgs = {
             self.rgb_topic: None,
-            self.robosense_lidar_topic: None,
+            **{
+                lidar_topic: None
+                for lidar_i, lidar_topic in enumerate(self.lidar_topic_list)
+                if lidar_i != self.anchor_lidar_id
+            },
         }
 
         while self.reader.has_next():
             topic, data, t_nanosec = self.reader.read_next()
             timestamp_sec = t_nanosec // 1_000_000_000
-            timestamp_nanosec = t_nanosec % 1_000_000_000
             self.pbar.update(timestamp_sec - self.start_sec - self.pbar.n)
 
             if topic not in self.target_topics:
@@ -570,32 +635,58 @@ class BagIO(Node):
 
             # 5. Deserialization
             msg = deserialize_message(data, msg_type)
-            msg_time = msg.header.stamp.sec
 
-            # Update the 'latest' buffer for asynchronous sensors
+            # Update the 'latest' buffer for non-anchor topics
             if topic in latest_msgs:
                 latest_msgs[topic] = msg
-                continue  # Don't save yet, wait for the trigger (RGB)
+                continue  # Don't save yet, wait for the trigger (anchor lidar)
 
-            elif topic == self.livox_lidar_topic:
+            # if the message is from the anchor lidar, trigger synchronization
+            elif topic == self.lidar_topic_list[self.anchor_lidar_id]:
                 sync_time = msg.header.stamp
-                # save livox
-                livox_pc_np = self.convert_pc2_to_numpy(msg)  # (N, 3)
 
-                if not latest_msgs[self.rgb_topic] or not latest_msgs[self.robosense_lidar_topic]:
+                # initialize placeholder for lidar pcs
+                lidar_pc_list = [None] * len(self.lidar_topic_list)
+
+                # save anchor lidar pc
+                lidar_pc_list[self.anchor_lidar_id] = convert_pc2_to_numpy(msg)  # (N, 3)
+
+                if not latest_msgs[self.rgb_topic] or any(
+                    [not latest_msgs[lidar_topic] for lidar_topic in self.non_anchor_lidar_topic_list]
+                ):
                     continue
 
                 if latest_msgs[self.rgb_topic]:
                     img_msg = latest_msgs[self.rgb_topic]
+                    if not msg_time_within_latency(img_msg.header.stamp, sync_time, max_latency_s):
+                        print(
+                            "Skipping due to latency: anchor lidar time = "
+                            + str(sync_time.sec)
+                            + "."
+                            + str(sync_time.nanosec)
+                            + ", Image time = "
+                            + str(img_msg.header.stamp.sec)
+                            + "."
+                            + str(img_msg.header.stamp.nanosec)
+                        )
+                        continue
+
                     # latest_msgs[self.rgb_topic] = None  # Clear after use
                     assert isinstance(img_msg, CompressedImage), f"Expected CompressedImage, got {type(img_msg)}"
-                    img_bgr_np = self.convert_compressed_image_to_numpy(img_msg)  # (H, W, 3)
+                    img_bgr_np = convert_compressed_image_to_numpy(img_msg)  # (H, W, 3)
                     img_np = cv2.cvtColor(img_bgr_np, cv2.COLOR_BGR2RGB)  # Convert BGR to RGB
-                if latest_msgs[self.robosense_lidar_topic]:
-                    rslidar_msg = latest_msgs[self.robosense_lidar_topic]
-                    assert isinstance(rslidar_msg, PointCloud2)
-                    # Convert the message into numpy array
-                    rslidar_pc_np = self.convert_pc2_to_numpy(rslidar_msg)  # (N, 3)
+                for lidar_i, lidar_topic in enumerate(self.lidar_topic_list):
+                    if lidar_i == self.anchor_lidar_id:
+                        continue
+                    if latest_msgs[lidar_topic]:
+                        lidar_msg = latest_msgs[lidar_topic]
+                        if not msg_time_within_latency(lidar_msg.header.stamp, sync_time, max_latency_s):
+                            continue
+                        assert isinstance(lidar_msg, PointCloud2)
+
+                        # Convert the message into numpy array
+                        lidar_pc = convert_pc2_to_numpy(lidar_msg)  # (N, 3)
+                        lidar_pc_list[lidar_i] = lidar_pc
 
                 # --- The crucial fix: Use the message's timestamp for the lookup ---
                 lookup_time_rclpy = rclpy.time.Time.from_msg(sync_time)
@@ -603,17 +694,20 @@ class BagIO(Node):
                 try:
                     # Look up the transform from the pose frame to the map frame at the pose time
                     # Note: Using the message's timestamp (lookup_time) is crucial for accurate TF.
-                    livox_pose = self.lookup_tfs("odom_glim", "livox_mid360_imu", lookup_time_rclpy)
+                    anchor_lidar_pose = self.lookup_tfs(
+                        self.world_frame_id, self.lidar_frame_ids[self.anchor_lidar_id], lookup_time_rclpy
+                    )
 
                 except Exception as e:
                     self.get_logger().warn(
-                        f"TF Lookup Error for synchronized pose at time {msg.header.stamp.sec}.{msg.header.stamp.nanosec}: {e}"
+                        f"TF Lookup Error for synchronized pose at time {msg.header.stamp.sec}."
+                        f"{msg.header.stamp.nanosec}: {e}"
                     )
                     continue
                 self.sync_msg_count += 1
                 if self.sync_msg_count % self.sample_every != 0:
                     continue
-                return livox_pc_np, rslidar_pc_np, img_np, livox_pose
+                return lidar_pc_list, img_np, anchor_lidar_pose, t_nanosec
 
         return None
 
@@ -629,17 +723,6 @@ class BagIO(Node):
         r = R.from_quat([rot.x, rot.y, rot.z, rot.w])
         pose[:3, :3] = r.as_matrix()
         return pose
-
-    def convert_compressed_image_to_numpy(self, compressed_image_msg: ROSImage) -> np.ndarray:
-        try:
-            np_arr = np.frombuffer(compressed_image_msg.data, np.uint8)
-
-            # 2. Decode the image into a color (BGR) numpy array
-            cv_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-        except CvBridgeError as e:
-            self.get_logger().error(f"CvBridge Error: {e}")
-            return None
-        return cv_image
 
 
 class SubscriberIO(Node):

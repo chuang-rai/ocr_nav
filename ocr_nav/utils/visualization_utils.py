@@ -121,10 +121,17 @@ def draw_bounding_boxes_on_image_np(image: np.ndarray, boxes: list, normalize_ma
     for box_info in boxes:
         box = box_info["bounding_box"]
         x_min, y_min, x_max, y_max = box
+        if normalize_max is None:
+            top_left = (int(x_min), int(y_min))
+            bottom_right = (int(x_max), int(y_max))
+        else:
+            top_left = (int(x_min / normalize_max * width), int(y_min / normalize_max * height))
+            bottom_right = (int(x_max / normalize_max * width), int(y_max / normalize_max * height))
+
         cv2.rectangle(
             image_with_boxes,
-            (int(x_min / normalize_max * width), int(y_min / normalize_max * height)),
-            (int(x_max / normalize_max * width), int(y_max / normalize_max * height)),
+            top_left,
+            bottom_right,
             color=(0, 255, 0),
             thickness=2,
         )
@@ -132,7 +139,7 @@ def draw_bounding_boxes_on_image_np(image: np.ndarray, boxes: list, normalize_ma
         cv2.putText(
             image_with_boxes,
             label,
-            (int(x_min / normalize_max * width), int(y_min / normalize_max * height) - 10),
+            (top_left[0], top_left[1] - 10),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.5,
             (0, 255, 0),

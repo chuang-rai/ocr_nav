@@ -32,8 +32,8 @@ def main():
     while bagio.has_next():
         data = bagio.get_next_sync_data()
         if data is None:
-            break
-        livox_pc_np, rslidar_pc_np, img_np, livox_pose = data
+            continue
+        pc_livox, pc_rslidar, img_np, livox_pose, t_nanosec = data
 
         mask = segmenter.segment(img_np, text_prompt="ground")
         mask = (mask > 0).astype(np.uint8) * 255

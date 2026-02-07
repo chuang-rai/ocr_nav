@@ -92,3 +92,44 @@ def draw_image(plotter: pv.Plotter, image: np.ndarray, position: List[float], sc
     plane.rotate_y(90, point=position, inplace=True)
     plotter.add_mesh(plane, texture=texture)
     return plotter
+
+
+def draw_bounding_box_widget(plotter: pv.Plotter, callback, bounds: np.ndarray) -> pv.Plotter:
+    """Draw interactive bounding box widget.
+
+    Args:
+        plotter (pv.Plotter): The PyVista plotter object to which the bounding box widget will be added.
+        callback (function): The callback function to be called when the bounding box widget is interacted with.
+            The content of the array should be [xmin, xmax, ymin, ymax, zmin, zmax].
+        bounds (np.ndarray): The initial bounds of the bounding box widget.
+
+    Returns:
+        pv.Plotter: The PyVista plotter object with the bounding box widget added.
+    """
+    plotter.add_box_widget(callback=callback, bounds=bounds, factor=1, rotation_enabled=False)
+    return plotter
+
+
+class PointCloudBoxSelector:
+    def __init__(self, point_cloud: np.ndarray, init_bound: np.ndarray = None):
+        self.plotter = create_plotter()
+        self.min_bound = point_cloud.min(axis=0).reshape((1, 3))
+        self.max_bound = point_cloud.max(axis=0).reshape((1, 3))
+        self.bound = np.vstack((self.min_bound, self.max_bound)).T.flatten()
+        if init_bound is not None:
+            self.bound = init_bound
+        self.point_cloud = pv.PolyData(point_cloud)
+        self.plotter.add_mesh(self.point_cloud, color="blue", point_size=2, name="clipped_pc")
+        self.plotter.add_box_widget(self.bbox_widget_callback, bounds=self.bound, factor=1.0, rotation_enabled=False)
+        self.selected_bound = None
+        self.clipped_pc = None
+        self.show()
+
+    def show(self):
+        self.plotter.show()
+
+    def bbox_widget_callback(self, widget):
+        self.selected_bound = widget.GetBounds()
+        self.clipped_pc = self.point_cloud.clip_box(self.selected_bound, invert=False)
+        self.plotter.add_mesh(self.clipped_pc, color="blue", point_size=2, name="clipped_pc", reset_camera=False)
+        print(f"Updated bounding box bounds: {self.selected_bound}")
