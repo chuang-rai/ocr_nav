@@ -7,7 +7,7 @@ from omegaconf import OmegaConf
 from pathlib import Path
 from tqdm import tqdm
 import argparse
-from ocr_nav.rag.graph_rag import EmbodiedGraphRAG
+from ocr_nav.rag.graph_rag import SimpleObjectFrameGraphRAG
 from ocr_nav.utils.io_utils import FolderIO, BagIO
 
 
@@ -55,7 +55,7 @@ def main():
     bagio.init_reader()
 
     graph_rag_path = bag_path.parent / "graph_rag"
-    graph_rag = EmbodiedGraphRAG(graph_rag_path.as_posix(), overwrite=True, embedding_model_name="BAAI/bge-m3")
+    graph_rag = SimpleObjectFrameGraphRAG(graph_rag_path.as_posix(), overwrite=True, embedding_model_name="BAAI/bge-m3")
     graph_rag.define_node_type(
         "Object", {"id": int, "label": str, "embedding": (float, 1024), "attributes": [str], "bbox": (int, 4)}
     )

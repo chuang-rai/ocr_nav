@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from tqdm import tqdm
 import argparse
-from ocr_nav.rag.graph_rag import EmbodiedGraphRAG
+from ocr_nav.rag.graph_rag import SimpleObjectFrameGraphRAG
 from ocr_nav.utils.io_utils import FolderIO
 
 
@@ -23,7 +23,7 @@ def main():
     os.makedirs(annotation_dir, exist_ok=True)
 
     graph_rag_path = root_path / "graph_rag.db"
-    graph_rag = EmbodiedGraphRAG(graph_rag_path.as_posix(), embedding_model_name="BAAI/bge-m3")
+    graph_rag = SimpleObjectFrameGraphRAG(graph_rag_path.as_posix(), embedding_model_name="BAAI/bge-m3")
 
     folderio = FolderIO(root_path, depth_name="", camera_pose_name="", mask_name="masks_gd_sam2_s")
     pbar = tqdm(enumerate(folderio.timestamp_list), total=folderio.len)

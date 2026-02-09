@@ -110,8 +110,8 @@ class BaseGraphRAG:
     ):
         index_name = f"{node_type}_{property_name}_idx"
         query = (
-            f"CALL CREATE_VECTOR_INDEX({node_type}, {index_name}, "
-            + f"{property_name}, metric:='{metric}', mu:={mu}, efc:={efc})"
+            f"CALL CREATE_VECTOR_INDEX('{node_type}', '{index_name}', "
+            + f"'{property_name}', metric:='{metric}', mu:={mu}, efc:={efc})"
         )
         try:
             self.connection.execute("LOAD EXTENSION vector")
@@ -123,8 +123,55 @@ class BaseGraphRAG:
             else:
                 raise e  # Re-raise if it's a different error
 
+    def retrieve_node_by_id(self, node_type: str, node_id: int):
+        query = f"MATCH (n:{node_type} {{id: $id}}) RETURN n"
+        result = self.connection.execute(query, {"id": node_id})
+        if result.has_next():
+            row = result.get_next()
+            return row[0]
+        else:
+            return None
 
-class EmbodiedGraphRAG(BaseGraphRAG):
+    def retrieve_node_by_query(self, node_type: str, query_text: str, property_name: str, top_k: int = 3):
+        self.build_node_index(node_type, property_name)
+        query_vec = self.embedding_model.encode(query_text).tolist()
+        try:
+            query = (
+                f"CALL QUERY_VECTOR_INDEX('{node_type}', "
+                + f"'{node_type}_{property_name}_idx', $vec, $top_k) "
+                + "YIELD node, distance RETURN node, distance"
+            )
+        except RuntimeError as e:
+            print("Error in building query:", e)
+        result = self.connection.execute(query, {"vec": query_vec, "top_k": top_k})
+        nodes = []
+        while result.has_next():
+            row = result.get_next()
+            nodes.append((row[0], row[1]))
+        return nodes
+
+    def retrieve_related_nodes_with_src_node(self, from_node_type: str, node_id: int):
+        # find all relationships starting from the given node type and return the related nodes
+        query = f"""MATCH (n:{from_node_type} {{id: $id}})-[r]->(m) RETURN n, r, m"""
+        result = self.connection.execute(query, {"id": node_id})
+        related_nodes = []
+        while result.has_next():
+            row = result.get_next()
+            related_nodes.append((row[0], row[1], row[2]))
+        return related_nodes
+
+    def retrieve_related_nodes_with_tar_node(self, to_node_type: str, node_id: int):
+        # find all relationships ending at the given node type and return the related nodes
+        query = f"""MATCH (n)-[r]->(m:{to_node_type} {{id: $id}}) RETURN n, r, m"""
+        result = self.connection.execute(query, {"id": node_id})
+        related_nodes = []
+        while result.has_next():
+            row = result.get_next()
+            related_nodes.append((row[0], row[1], row[2]))
+        return related_nodes
+
+
+class SimpleObjectFrameGraphRAG(BaseGraphRAG):
     def __init__(self, kuzu_db_dir: str, overwrite: bool = False, embedding_model_name: str = "BAAI/bge-m3"):
         super().__init__(kuzu_db_dir, overwrite, embedding_model_name)
         self.obj_id = 0
@@ -207,25 +254,22 @@ class EmbodiedGraphRAG(BaseGraphRAG):
             self.obj_id += 1
 
     def find_images_by_concept(self, query_text: str, top_k: int = 3):
-        self.build_index()
-        query_vec = self.embedding_model.encode(query_text).tolist()
+        # self.build_index()
+        self.build_node_index("Object", "embedding", metric="cosine", mu=16, efc=200)
+        top_k_nodes = self.retrieve_node_by_query("Object", query_text, "embedding", top_k=top_k)
 
-        # 1. Vector search for relevant objects
-        # 2. Graph hop to the Frame (image) containing them
-        result = self.connection.execute(
-            """
-            CALL QUERY_VECTOR_INDEX('Object', 'object_embeddings_idx', $vec, $top_k)
-            YIELD node AS o, distance
-            MATCH (f:Frame)-[r:FrameContainsObject]->(o)
-            RETURN f.id, f.timestamp, o.label, r.bbox, distance
-            """,
-            {"vec": query_vec, "top_k": top_k},
-        )
+        img_poses = []
         img_ids = []
         box_info = []
-        while result.has_next():
-            row = result.get_next()
-            print(f"Found {row[1]} in {row[0]} (Distance: {row[4]:.4f}) at BBox {row[3]}")
-            img_ids.append(row[0])
-            box_info.append({"label": row[2], "bounding_box": row[3], "distance": row[4]})
+        for node, distance in top_k_nodes:
+            print(f"Found Object: {node['label']} with distance {distance:.4f}")
+            frames = self.retrieve_related_nodes_with_tar_node("Object", node["id"])
+            box_info.append({"label": node["label"], "bounding_box": frames[0][1]["bbox"], "distance": distance})
+            for f, rel, o in frames:
+                print(f"  In Frame: {f['timestamp']} with caption: {f['caption']} at BBox {rel['bbox']}")
+                frame_id = f["id"]
+                frame_pose = f["pose"]
+                img_poses.append(frame_pose)
+                img_ids.append(frame_id)
+                break
         return img_ids, box_info

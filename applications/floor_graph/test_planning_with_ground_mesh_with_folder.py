@@ -32,7 +32,7 @@ def main():
     )
     args = parser.parse_args()
     root_path = args.root_path
-    folderio = FolderIO(root_path, depth_name="", camera_pose_name="", mask_name="masks_gd_sam2_s")
+    folderio = FolderIO(Path(root_path), depth_name="", camera_pose_name="", mask_name="masks_gd_sam2_s")
 
     ground_mesh = FloorGraph(voxel_size=0.1)
     ground_mesh.build_floor_graph_with_folder(folderio, vis=False)

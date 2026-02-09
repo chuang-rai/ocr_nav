@@ -9,7 +9,7 @@ import argparse
 from transformers import AutoModelForImageTextToText, AutoProcessor
 import torch
 from ocr_nav.utils.visualization_utils import draw_bounding_boxes_on_image_np
-from ocr_nav.rag.graph_rag import EmbodiedGraphRAG
+from ocr_nav.rag.graph_rag import SimpleObjectFrameGraphRAG
 from ocr_nav.vlm.qwen3_vl import QWen3VLQueryInterface
 from ocr_nav.utils.io_utils import FolderIO, encode_image_to_bytes, encode_image_to_base64_string
 from ocr_nav.utils.visualization_utils import draw_bounding_boxes_on_image_np
@@ -24,7 +24,7 @@ def main():
     rgb_paths = sorted(list(rgb_dir.iterdir()))
 
     graph_rag_path = bag_path.parent / "graph_rag"
-    graph_rag = EmbodiedGraphRAG(graph_rag_path.as_posix(), embedding_model_name="BAAI/bge-m3")
+    graph_rag = SimpleObjectFrameGraphRAG(graph_rag_path.as_posix(), embedding_model_name="BAAI/bge-m3")
 
     k = 1
     while k != ord("q"):
