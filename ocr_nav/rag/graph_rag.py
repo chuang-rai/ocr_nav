@@ -6,11 +6,11 @@ from ocr_nav.utils.rag_utils import convert_type_to_kuzu_type
 
 class BaseGraphRAG:
     def __init__(self, kuzu_db_dir: str, overwrite: bool = False, embedding_model_name: str = "BAAI/bge-m3"):
-        kuzu_db_dir = Path(kuzu_db_dir)
-        kuzu_db_path = kuzu_db_dir / (kuzu_db_dir.name + ".db")
+        self.kuzu_db_dir = Path(kuzu_db_dir)
+        kuzu_db_path = self.kuzu_db_dir / (self.kuzu_db_dir.name + ".db")
         if overwrite and kuzu_db_path.exists():
             kuzu_db_path.unlink()
-        kuzu_db_dir.mkdir(parents=True, exist_ok=True)
+        self.kuzu_db_dir.mkdir(parents=True, exist_ok=True)
         self.kuzu_db = kuzu.Database(kuzu_db_path.as_posix())
         self.connection = kuzu.Connection(self.kuzu_db)
         self.embedding_model = SentenceTransformer(embedding_model_name)
@@ -18,7 +18,7 @@ class BaseGraphRAG:
         self.node_types = self._check_existing_node_types()
         self.rel_types = self._check_existing_rel_types()
 
-    def _check_existing_node_types(self):
+    def _check_existing_node_types(self) -> set[str]:
         result = self.connection.execute("CALL show_tables() WHERE type = 'NODE' RETURN name;")
         existing_node_types = set()
         while result.has_next():
@@ -27,7 +27,7 @@ class BaseGraphRAG:
             existing_node_types.add(row[0])
         return existing_node_types
 
-    def _check_existing_rel_types(self):
+    def _check_existing_rel_types(self) -> set[str]:
         result = self.connection.execute("CALL show_tables() WHERE type = 'REL' RETURN name;")
         existing_rel_types = set()
         while result.has_next():
@@ -35,6 +35,34 @@ class BaseGraphRAG:
             print("Existing relationship type:", row[0])
             existing_rel_types.add(row[0])
         return existing_rel_types
+
+    def get_existing_node_types(self) -> set[str]:
+        self.node_types = self._check_existing_node_types()
+        return self.node_types
+
+    def get_existing_rel_types(self) -> set[str]:
+        self.rel_types = self._check_existing_rel_types()
+        return self.rel_types
+
+    def get_all_nodes_of_type(self, node_type: str) -> list[dict]:
+        query = f"MATCH (n:{node_type}) RETURN n"
+        result = self.connection.execute(query)
+        nodes = []
+        while result.has_next():
+            row = result.get_next()
+            nodes.append(row[0])
+        return nodes
+
+    def get_all_rels_of_type(self, rel_type: str) -> list[tuple[dict, dict, dict]]:
+        # query = f"MATCH (s)-[r:{rel_type}]->(t) RETURN s.id, label(s), r, t.id, label(t)"
+        query = f"MATCH (s)-[r:{rel_type}]->(t) RETURN s, r, t"
+        result = self.connection.execute(query)
+        rels = []
+        while result.has_next():
+            row = result.get_next()
+            rels.append((row[0], row[1], row[2]))
+
+        return rels
 
     def define_node_type(self, node_name: str, properties: dict):
         props_str = ", ".join([f"{k} {convert_type_to_kuzu_type(v)}" for k, v in properties.items()])
@@ -72,6 +100,15 @@ class BaseGraphRAG:
         props_str = ", ".join([f"{k}: ${k}" for k in properties.keys()])
         query = f"CREATE (n:{node_type} {{{props_str}}})"
         self.connection.execute(query, properties)
+
+    def update_node(self, node_type: str, node_id: int, new_properties: dict):
+        if node_type not in self.node_types:
+            raise ValueError(f"Node type {node_type} is not defined in the graph.")
+        props_str = ", ".join([f"n.{k} = ${k}" for k in new_properties.keys()])
+        query = f"MATCH (n:{node_type} {{id: $id}}) SET {props_str}"
+        params = {"id": node_id}
+        params.update(new_properties)
+        self.connection.execute(query, params)
 
     def add_relationship(
         self,
@@ -132,7 +169,7 @@ class BaseGraphRAG:
         else:
             return None
 
-    def retrieve_node_by_query(self, node_type: str, query_text: str, property_name: str, top_k: int = 3):
+    def retrieve_node_and_score_by_query(self, node_type: str, query_text: str, property_name: str, top_k: int = 3):
         self.build_node_index(node_type, property_name)
         query_vec = self.embedding_model.encode(query_text).tolist()
         try:
@@ -169,6 +206,19 @@ class BaseGraphRAG:
             row = result.get_next()
             related_nodes.append((row[0], row[1], row[2]))
         return related_nodes
+
+    def execute_cypher_query(self, query: str):
+        try:
+            result = self.connection.execute(query)
+        except RuntimeError as e:
+            error_message = str(e)
+            return f"Error executing query: {error_message}"
+
+        results = []
+        while result.has_next():
+            row = result.get_next()
+            results.append(row)
+        return results
 
 
 class SimpleObjectFrameGraphRAG(BaseGraphRAG):
@@ -256,7 +306,7 @@ class SimpleObjectFrameGraphRAG(BaseGraphRAG):
     def find_images_by_concept(self, query_text: str, top_k: int = 3):
         # self.build_index()
         self.build_node_index("Object", "embedding", metric="cosine", mu=16, efc=200)
-        top_k_nodes = self.retrieve_node_by_query("Object", query_text, "embedding", top_k=top_k)
+        top_k_nodes = self.retrieve_node_and_score_by_query("Object", query_text, "embedding", top_k=top_k)
 
         img_poses = []
         img_ids = []
@@ -272,4 +322,4 @@ class SimpleObjectFrameGraphRAG(BaseGraphRAG):
                 img_poses.append(frame_pose)
                 img_ids.append(frame_id)
                 break
-        return img_ids, box_info
+        return img_ids, box_info, img_poses

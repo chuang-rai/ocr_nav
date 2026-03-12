@@ -25,5 +25,5 @@ bagio:
   camera_frame_id: zed_left_camera_optical_frame                         # Camera frame ID
   world_frame_id: odom_glim                                              # World frame ID
   max_bag_total_time_sec: 3600                                           # maximum total time (in seconds) to read from the bag
-  sample_every: 10                                                       # sample every N synchronized messages
+  sample_every: 1                                                       # sample every N synchronized messages
   max_sync_latency_sec: 0.2                                              # maximum synchronization latency (in seconds)

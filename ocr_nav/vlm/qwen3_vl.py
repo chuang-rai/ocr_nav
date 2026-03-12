@@ -1,5 +1,5 @@
 import os
-from transformers import AutoModelForImageTextToText, AutoProcessor
+from transformers import AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
 from vllm import LLM, SamplingParams
 from qwen_vl_utils import process_vision_info
 import torch
@@ -55,23 +55,27 @@ class QWen3VLQueryInterface:
 
 
 class QWen3VLvLLMQueryInterface:
-    def __init__(self, model_name: str = "Qwen/Qwen3-VL-8B-Instruct"):
+    def __init__(self, model_name: str = "Qwen/Qwen3-VL-8B-Instruct", quantization: str | None = None):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
         os.environ["OMP_NUM_THREADS"] = "1"
 
         self.processor = AutoProcessor.from_pretrained(model_name)
-        self.llm = LLM(
+        llm_kwargs = dict(
             model=model_name,
             mm_encoder_tp_mode="data",
             enable_expert_parallel=False,
             max_model_len=4096,
+            gpu_memory_utilization=0.7,
             tensor_parallel_size=torch.cuda.device_count(),
             mm_processor_kwargs={
                 "limit_mm_per_prompt": {"image": 1, "video": 0},
             },
             seed=0,
         )
+        if quantization:
+            llm_kwargs["quantization"] = quantization
+        self.llm = LLM(**llm_kwargs)
         self.sampling_params = SamplingParams(
             temperature=0,
             max_tokens=1024,
@@ -88,7 +92,6 @@ class QWen3VLvLLMQueryInterface:
             return_video_kwargs=True,
             return_video_metadata=True,
         )
-        print(f"video_kwargs: {video_kwargs}")
 
         mm_data = {}
         if image_inputs is not None:

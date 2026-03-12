@@ -115,7 +115,9 @@ def draw_line(
     return line_set
 
 
-def draw_bounding_boxes_on_image_np(image: np.ndarray, boxes: list, normalize_max: float = 1) -> np.ndarray:
+def draw_bounding_boxes_on_image_np(
+    image: np.ndarray, boxes: list, normalize_max: float | None = None, index: int = "rowcol"
+) -> np.ndarray:
     image_with_boxes = image.copy()
     height, width = image.shape[:2]
     for box_info in boxes:
@@ -128,6 +130,9 @@ def draw_bounding_boxes_on_image_np(image: np.ndarray, boxes: list, normalize_ma
             top_left = (int(x_min / normalize_max * width), int(y_min / normalize_max * height))
             bottom_right = (int(x_max / normalize_max * width), int(y_max / normalize_max * height))
 
+        if index == "xy":
+            top_left = (int(y_min / normalize_max * width), int(x_min / normalize_max * height))
+            bottom_right = (int(y_max / normalize_max * width), int(x_max / normalize_max * height))
         cv2.rectangle(
             image_with_boxes,
             top_left,
@@ -146,3 +151,47 @@ def draw_bounding_boxes_on_image_np(image: np.ndarray, boxes: list, normalize_ma
             2,
         )
     return image_with_boxes
+
+
+def warp_corners_and_draw_matches(ref_points, dst_points, img1, img2):
+    # Calculate the Homography matrix
+    H, mask = cv2.findHomography(ref_points, dst_points, cv2.USAC_MAGSAC, 3.5, maxIters=1_000, confidence=0.999)
+    mask = mask.flatten()
+
+    # Get corners of the first image (image1)
+    h, w = img1.shape[:2]
+    corners_img1 = np.array([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]], dtype=np.float32).reshape(-1, 1, 2)
+
+    # Warp corners to the second image (image2) space
+    warped_corners = cv2.perspectiveTransform(corners_img1, H)
+
+    # Draw the warped corners in image2
+    img2_with_corners = img2.copy()
+    for i in range(len(warped_corners)):
+        start_point = tuple(warped_corners[i - 1][0].astype(int))
+        end_point = tuple(warped_corners[i][0].astype(int))
+        cv2.line(img2_with_corners, start_point, end_point, (0, 255, 0), 4)  # Using solid green for corners
+
+    # Prepare keypoints and matches for drawMatches function
+    keypoints1 = [cv2.KeyPoint(p[0], p[1], 5) for p in ref_points]
+    keypoints2 = [cv2.KeyPoint(p[0], p[1], 5) for p in dst_points]
+    matches = [cv2.DMatch(i, i, 0) for i in range(len(mask)) if mask[i]]
+
+    # Draw inlier matches
+    img_matches = cv2.drawMatches(
+        img1, keypoints1, img2_with_corners, keypoints2, matches, None, matchColor=(0, 255, 0), flags=2
+    )
+
+    return img_matches
+
+
+def visualize_masks_on_image(image: np.ndarray, masks: np.ndarray, alpha: float = 0.5) -> np.ndarray:
+    # random list of colors for each mask
+    color_list = [
+        (np.random.randint(0, 255), np.random.randint(0, 255), np.random.randint(0, 255)) for _ in range(masks.shape[0])
+    ]
+    color_mask = np.zeros_like(image)
+    for i, mask in enumerate(masks):
+        color_mask[mask > 0] = color_list[i % len(color_list)]
+    blended_image = cv2.addWeighted(image, 1 - alpha, color_mask, alpha, 0)
+    return blended_image

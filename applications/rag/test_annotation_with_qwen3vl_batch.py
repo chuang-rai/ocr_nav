@@ -15,7 +15,9 @@ from ocr_nav.utils.visualization_utils import draw_bounding_boxes_on_image_np
 
 def main():
     # qwen3_vl = QWen3VLQueryInterface(model_name="Qwen/Qwen3-VL-8B-Instruct")
-    qwen3_vl = QWen3VLvLLMQueryInterface(model_name="Qwen/Qwen3-VL-4B-Instruct")
+    # qwen3_vl = QWen3VLvLLMQueryInterface(model_name="Qwen/Qwen3-VL-4B-Instruct")
+    # qwen3_vl = QWen3VLvLLMQueryInterface(model_name="Qwen/Qwen3-VL-8B-Instruct-FP8", quantization="fp8")
+    qwen3_vl = QWen3VLvLLMQueryInterface(model_name="Qwen/Qwen3-VL-8B-Instruct")
     # qwen3_vl = QWen3VLQueryInterface(model_name="Qwen/Qwen2.5-VL-3B-Instruct")
 
     parser = argparse.ArgumentParser(description="Ground Mesh Construction with Folder")
@@ -30,7 +32,7 @@ def main():
     args = parser.parse_args()
 
     root_path = Path(args.root_path)
-    annotation_dir = root_path / "qwen3vl_annotations_fast_4b"
+    annotation_dir = root_path / "qwen3vl_annotations_8b"
     os.makedirs(annotation_dir, exist_ok=True)
 
     bs = args.batch_size

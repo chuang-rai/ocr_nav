@@ -186,6 +186,29 @@ def select_points_in_masks(
     return pc_o3d
 
 
+def select_points_in_masks_batch(
+    masks: np.ndarray, pc_image_2d: np.ndarray, pc_image_3d: np.ndarray
+) -> List[o3d.geometry.PointCloud]:
+    """Select 3D points from a point cloud for each mask in a batch.
+
+    Args:
+        masks (np.ndarray): (M, H, W) array of binary masks indicating valid regions.
+        pc_image_2d (np.ndarray): (N, 2) array of 2D projected points in the image pixel space.
+        pc_image_3d (np.ndarray): (N, 3) array of corresponding 3D points.
+
+    Returns:
+        List[o3d.geometry.PointCloud]: List of point clouds containing only the selected 3D points for each mask.
+    """
+    pc_list = []
+    ids = masks[:, pc_image_2d[:, 1].astype(int), pc_image_2d[:, 0].astype(int)]  # (M, N)
+    for i in range(masks.shape[0]):
+        valid_indices = np.where(ids[i] > 0)[0]
+        pc_o3d = o3d.geometry.PointCloud()
+        pc_o3d.points = o3d.utility.Vector3dVector(pc_image_3d[valid_indices])
+        pc_list.append(pc_o3d)
+    return pc_list
+
+
 def to_o3d_pc(pc: np.ndarray) -> o3d.geometry.PointCloud:
     """Convert a numpy array point cloud to Open3D PointCloud object.
 

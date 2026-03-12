@@ -9,12 +9,19 @@ from transformers import AutoModelForImageTextToText, AutoProcessor
 import torch
 from ocr_nav.utils.visualization_utils import draw_bounding_boxes_on_image_np
 from ocr_nav.vlm.qwen3_vl import QWen3VLQueryInterface, QWen3VLvLLMQueryInterface
-from ocr_nav.utils.io_utils import FolderIO, encode_image_to_bytes, encode_image_to_base64_string
+from ocr_nav.utils.io_utils import (
+    FolderIO,
+    encode_image_to_bytes,
+    encode_image_to_base64_string,
+    numpy_img2bytes_pil,
+    bytes_to_base64_string,
+)
 from ocr_nav.utils.visualization_utils import draw_bounding_boxes_on_image_np
 
 
 def main():
     # qwen3_vl = QWen3VLQueryInterface(model_name="Qwen/Qwen3-VL-8B-Instruct")
+    # qwen3_vl = QWen3VLvLLMQueryInterface(model_name="Qwen/Qwen3-VL-8B-Instruct-FP8", quantization="fp8")
     qwen3_vl = QWen3VLvLLMQueryInterface(model_name="Qwen/Qwen3-VL-8B-Instruct")
     # qwen3_vl = QWen3VLQueryInterface(model_name="Qwen/Qwen2.5-VL-3B-Instruct")
 
@@ -29,7 +36,7 @@ def main():
     args = parser.parse_args()
 
     root_path = Path(args.root_path)
-    annotation_dir = root_path / "qwen3vl_annotations_fast"
+    annotation_dir = root_path / "qwen3vl_annotations_8b"
     os.makedirs(annotation_dir, exist_ok=True)
 
     folderio = FolderIO(root_path, depth_name="", camera_pose_name="", mask_name="masks_gd_sam2_s")
@@ -63,7 +70,13 @@ def main():
         }
         """
         )
-        response = qwen3_vl.query(prompt, image_bytes=encode_image_to_base64_string(img_bgr))
+
+        # image_bytes = numpy_img2bytes_pil(img_bgr)
+        image_bytes = encode_image_to_bytes(img_bgr)
+        image_bytes = bytes_to_base64_string(image_bytes)
+
+        # response = qwen3_vl.query(prompt, image_bytes=encode_image_to_base64_string(img_bgr))
+        response = qwen3_vl.query(prompt, image_bytes=image_bytes)
         print(response)
         response = response.replace("```json", "").replace("```", "")
         try:

@@ -8,7 +8,6 @@ import numpy as np
 import argparse
 from transformers import AutoModelForImageTextToText, AutoProcessor
 import torch
-from ocr_nav.utils.visualization_utils import draw_bounding_boxes_on_image_np
 from ocr_nav.rag.graph_rag import SimpleObjectFrameGraphRAG
 from ocr_nav.vlm.qwen3_vl import QWen3VLQueryInterface
 from ocr_nav.utils.io_utils import FolderIO, encode_image_to_bytes, encode_image_to_base64_string
@@ -32,7 +31,7 @@ def main():
         if query_text == "q":
             break
 
-        img_ids, box_infos = graph_rag.find_images_by_concept(query_text, top_k=5)
+        img_ids, box_infos, img_poses = graph_rag.find_images_by_concept(query_text, top_k=5)
         # img_ids, box_infos = graph_rag.find_images_by_concept("computer", top_k=5)
         # img_ids, box_infos = graph_rag.find_images_by_concept("I feel lonely, where should I go?", top_k=5)
         # img_ids, box_infos = graph_rag.find_images_by_concept("I want to go upstairs", top_k=5)

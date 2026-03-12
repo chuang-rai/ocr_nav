@@ -16,12 +16,11 @@ from ocr_nav.utils.visualization_utils import draw_bounding_boxes_on_image_np
 
 def main():
     config_dir = Path(__file__).parent.parent.parent / "config"
-    gpt_config_path = config_dir / "llm" / "gpt.yaml"
-    with open(gpt_config_path, "r") as file:
-        gpt_config = yaml.safe_load(file)
+    gemini_config_path = config_dir / "llm" / "gemini.yaml"
+    with open(gemini_config_path, "r") as file:
+        gemini_config = yaml.safe_load(file)
     device = "cuda"
-    gpt = dynamic_model(gpt_config, device=device)
-
+    gemini = dynamic_model(gemini_config, device=device)
     parser = argparse.ArgumentParser(description="Ground Mesh Construction with Folder")
     parser.add_argument(
         "--root_path",
@@ -29,21 +28,25 @@ def main():
         default="/home/chuang/hcg/projects/ocr/data/eth_extracted_sync/rosbag2_2025_12_16-17_09_00_perception_suite",
         help="Root path to the dataset folder",
     )
+    parser.add_argument("--sample_every", type=int, default=10, help="Sample every N images for annotation")
     args = parser.parse_args()
 
     root_path = Path(args.root_path)
-    annotation_dir = root_path / "gpt52_annotations"
+    annotation_dir = root_path / "gemini_annotations_with_relationships"
     os.makedirs(annotation_dir, exist_ok=True)
     folderio = FolderIO(root_path, depth_name="", camera_pose_name="", mask_name="masks_gd_sam2_s")
     pbar = tqdm(enumerate(folderio.timestamp_list), total=folderio.len)
     for i, timestamp in pbar:
+        if i % args.sample_every != 0:
+            continue
         print(timestamp)
         img_np = np.array(folderio.get_image(i)).astype(np.uint8)
         img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
         prompt = (
-            "Describe the scene in the image based on the highlighted areas in the mask. "
-            "Also draw bounding boxes around any objects of interest. "
+            "Describe the scene in the image. "
+            "Draw bounding boxes around any objects of interest. "
             "Please normalize the coordinates to be between 0 and 1000. "
+            "Also provide the semantic or spatial relationship between objects if applicable. "
             "The output format should be in JSON:"
             """
         {
@@ -51,7 +54,7 @@ def main():
             "objects": [
                 {
                     "label": "object label",
-                    "bounding_box": [x_min, y_min, x_max, y_max],
+                    "bounding_box": [row_min, col_min, row_max, col_max],
                     "attributes": {
                         "color": "color of the object",
                         "material": "material of the object",
@@ -60,23 +63,35 @@ def main():
                     }
                 },
                 ...
+            ],
+            "relationships": [
+                {
+                    "subject_id": "object id accoding to the order in the objects list",
+                    "object_id": "object id accoding to the order in the objects list",
+                    "relation": "relationship between the subject and object"
+                },
+                ...
+            ]
         }
         """
         )
         # response = gpt.query(prompt, numpy_img2bytes_pil(img_bgr))
-        response = gpt.query(prompt, encode_image_to_bytes(img_bgr))
+        response = gemini.query(prompt, encode_image_to_bytes(img_bgr))
         print(response)
         response = response.replace("```json", "").replace("```", "")
-        data = json.loads(response)
-        img_bgr = draw_bounding_boxes_on_image_np(img_bgr, data.get("objects", []), normalize_max=1000)
+        try:
+            data = json.loads(response)
+        except json.JSONDecodeError:
+            print(f"Failed to parse JSON for timestamp {timestamp}. Skipping...")
+            continue
+        img_bgr = draw_bounding_boxes_on_image_np(img_bgr, data.get("objects", []), normalize_max=1000, index="xy")
 
-        annotation_path = annotation_dir / f"gpt52_{timestamp}.json"
+        annotation_path = annotation_dir / f"gemini_{timestamp}.json"
         with open(annotation_path, "w") as f:
             json.dump(data, f, indent=4)
         cv2.imshow("Image", img_bgr)
-        cv2.waitKey()
+        cv2.waitKey(1)
         pbar.set_description(f"Timestamp: {timestamp}")
-        break
 
 
 if __name__ == "__main__":
