@@ -6,3 +6,5 @@
 *.so
 *.dylib
 *.dll
+ocr_nav/applications/rag/lib
+lib
