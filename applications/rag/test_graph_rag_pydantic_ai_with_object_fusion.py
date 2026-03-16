@@ -81,8 +81,10 @@ def build_agent(model_name: str = "google-gla:gemini-3.1-flash-lite-preview") ->
     @agent.tool
     def semantic_search_in_graph(ctx: RunContext[GraphRAGDeps], query: str, top_k: int) -> str:
         """Perform a semantic search in the graph using the provided query text.
-        Use the graph_rag's built-in retrieval methods to find relevant nodes."""
-        cprint(f"Performing semantic search with query: {query}", "cyan")
+        Use the graph_rag's built-in retrieval methods to find relevant nodes.
+        top_k is clamped to a minimum of 5 to ensure sufficient results."""
+        top_k = max(top_k, 5)  # always retrieve at least 5 nodes
+        cprint(f"Performing semantic search with query: {query}, top_k: {top_k}", "cyan")
         try:
             obj_score_tuples = ctx.deps.graph_rag.retrieve_node_and_score_by_query(
                 "Object", query, "embedding", top_k=top_k
@@ -152,7 +154,7 @@ def main():
         )
 
         result = agent.run_sync(query_text, deps=deps)
-        cprint(f"Model: Final answer: {result.data}", "green")
+        cprint(f"Model: Final answer: {result.output}", "green")
 
 
 if __name__ == "__main__":

@@ -18,6 +18,27 @@ It is always recommended to understand the node types and relationship types of 
 When you decide to retrieve a node, also check all its property types first. If there is field like "embedding",
 avoid outputing these to the LLM.
 
+### Important retrieval and visualization guidelines
+
+1. **Always retrieve at least 5 nodes** when performing a semantic search.
+   Set `top_k` to **at least 5** (use a higher value if the query is broad).
+   Never use `top_k=1`.
+
+2. **Always check for `IsSame` relationships** between retrieved Object nodes
+   before visualizing. After semantic search returns a set of Object node IDs,
+   run a Cypher query such as:
+   ```
+   MATCH (a:Object)-[r:IsSame]-(b:Object)
+   WHERE a.id IN [<id_list>] AND b.id IN [<id_list>]
+   RETURN a.id, b.id
+   ```
+   Include every discovered `IsSame` edge in the `edge_list` passed to the
+   `visualize_nodes_edges` tool. This ensures that nodes representing the
+   same real-world object are visually linked.
+
+3. When visualizing, include **all** retrieved Object nodes and their related
+   nodes (e.g. Bbox, Frame) in the `node_list`, not just the top-1 result.
+
 ## Tools
 
 ### execute_cypher_query

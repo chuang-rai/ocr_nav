@@ -232,8 +232,8 @@ class GraphRAGSearchSkills:
 
     def _handle_semantic_search_in_graph(self, args: dict, **kwargs) -> dict:
         search_query = args["query"]
-        top_k = args["top_k"]
-        cprint(f"Performing semantic search with query: {search_query}", "cyan")
+        top_k = max(args["top_k"], 5)  # always retrieve at least 5 nodes
+        cprint(f"Performing semantic search with query: {search_query}, top_k: {top_k}", "cyan")
         try:
             obj_score_tuples = self.graph_rag.retrieve_node_and_score_by_query(
                 "Object", search_query, "embedding", top_k=top_k
