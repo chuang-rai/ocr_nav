@@ -70,7 +70,7 @@ def main():
             fn_name = function_call_part.function_call.name
             fn_args = dict(function_call_part.function_call.args)
             fn_response = skills.execute(fn_name, fn_args, query_text=query_text)
-            cprint(f"Executed function '{fn_name}' with args {fn_args}, got response: \n{fn_response}", "yellow")
+            # cprint(f"Executed function '{fn_name}' with args {fn_args}, got response: \n{fn_response}", "yellow")
 
             # Append function response to history
             history.append(
