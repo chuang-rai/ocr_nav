@@ -1,7 +1,7 @@
 import re
-import numpy as np
 from collections import defaultdict
-from typing import List, Tuple
+
+import numpy as np
 
 
 def re_match(text: str):
@@ -18,14 +18,14 @@ def re_match(text: str):
     return matches, mathes_image, mathes_other
 
 
-def compute_text_freq(text_tuple_list: List[Tuple[str, str, str]]):
+def compute_text_freq(text_tuple_list: list[tuple[str, str, str]]):
     text_freq_dict = defaultdict(int)
     for text_tuple in text_tuple_list:
         text_freq_dict[text_tuple[1]] += 1
     return text_freq_dict
 
 
-def select_points_in_bbox(pc_image_2d: np.ndarray, bbox: List[int], pc_3d: np.ndarray) -> np.ndarray:
+def select_points_in_bbox(pc_image_2d: np.ndarray, bbox: list[int], pc_3d: np.ndarray) -> np.ndarray:
     x_min, y_min, x_max, y_max = bbox
     selected_indices = np.where(
         (pc_image_2d[:, 0] >= x_min)

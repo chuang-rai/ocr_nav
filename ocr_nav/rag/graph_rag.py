@@ -1,6 +1,8 @@
 from pathlib import Path
+
 import kuzu
 from sentence_transformers import SentenceTransformer
+
 from ocr_nav.utils.rag_utils import convert_type_to_kuzu_type
 
 
@@ -267,7 +269,7 @@ class SimpleObjectFrameGraphRAG(BaseGraphRAG):
     def ingest_json_frame(self, frame_id: int, timestamp: str, frame_caption: str, objects_json: list[dict]):
         # Create the Frame
         self.connection.execute(
-            "MERGE (f:Frame {id: $id})" " ON CREATE SET f.timestamp = $ts, f.caption = $caption",
+            "MERGE (f:Frame {id: $id}) ON CREATE SET f.timestamp = $ts, f.caption = $caption",
             {"id": frame_id, "ts": timestamp, "caption": frame_caption},
         )
 

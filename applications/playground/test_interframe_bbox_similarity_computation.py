@@ -1,11 +1,11 @@
-import torch
+import argparse
 import json
 from pathlib import Path
+
+import cv2
 import numpy as np
 from tqdm import tqdm
-import matplotlib.pyplot as plt
-import argparse
-import cv2
+
 from ocr_nav.matcher.xfeat_matcher import XFeatMatcher
 
 

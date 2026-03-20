@@ -1,9 +1,7 @@
-from collections import defaultdict
 from dataclasses import dataclass
-import numpy as np
-from ocr_nav.utils.levenshtein_utils import levenshtein_distance
-from typing import List, Optional
+
 import networkx as nx
+import numpy as np
 
 
 @dataclass
@@ -17,7 +15,7 @@ class Pose:
 
     pose_id: int
     pose: np.ndarray
-    lidar: Optional[np.ndarray] = None  # (N, 3)
+    lidar: np.ndarray | None = None  # (N, 3)
 
 
 class PoseGraph:
@@ -29,7 +27,7 @@ class PoseGraph:
     def __init__(self):
         self.G = nx.Graph()
 
-    def add_pose(self, pose_id: int, pose: np.ndarray, lidar: Optional[np.ndarray] = None) -> int:
+    def add_pose(self, pose_id: int, pose: np.ndarray, lidar: np.ndarray | None = None) -> int:
         p_node = Pose(pose_id, pose, lidar)
         assert pose_id not in self.G.nodes, f"Pose id {pose_id} already exists in the graph."
         self.G.add_node(pose_id, pose=p_node)

@@ -1,12 +1,12 @@
 import argparse
 import json
-import numpy as np
 from pathlib import Path
-from tqdm import tqdm
-import pyvista as pv
+
 import networkx as nx
+import numpy as np
+import pyvista as pv
 from plyfile import PlyData
-from typing import Optional
+from tqdm import tqdm
 
 
 def create_plotter() -> pv.Plotter:
@@ -25,7 +25,7 @@ def load_ply_point_cloud(ply_path: Path) -> np.ndarray:
 
 
 def draw_point_cloud(
-    plotter: pv.Plotter, points: np.ndarray, color: Optional[np.ndarray] = None, point_size: float = 5.0
+    plotter: pv.Plotter, points: np.ndarray, color: np.ndarray | None = None, point_size: float = 5.0
 ) -> pv.Plotter:
     point_cloud = pv.PolyData(points)
     point_cloud["colors"] = color if color is not None else np.array([[0.0, 0.0, 1.0]] * points.shape[0])

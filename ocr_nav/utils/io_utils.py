@@ -1,41 +1,33 @@
-import os
-import yaml
-import json
-from PIL import Image, ImageOps
-from pathlib import Path
-from scipy.spatial.transform import Rotation as R
 import io
-import numpy as np
-from tqdm import tqdm
-import cv2
-from plyfile import PlyData
+import json
+from collections import deque
+from pathlib import Path
 
+import cv2
+import numpy as np
 import rclpy
+import rosbag2_py
+import sensor_msgs_py.point_cloud2 as pc2
+import yaml
+from builtin_interfaces.msg import Time
+from cv_bridge import CvBridge, CvBridgeError
+from message_filters import ApproximateTimeSynchronizer, Subscriber
+from PIL import Image, ImageOps
+from plyfile import PlyData
 from rclpy.node import Node
 from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
-import rosbag2_py
-from tf2_ros import Buffer, TransformListener
-from cv_bridge import CvBridge, CvBridgeError
-
-from sensor_msgs.msg import CompressedImage, CameraInfo, PointCloud2
+from scipy.spatial.transform import Rotation as R
+from sensor_msgs.msg import CameraInfo, CompressedImage, PointCloud2
 from sensor_msgs.msg import Image as ROSImage
-import sensor_msgs_py.point_cloud2 as pc2
-from geometry_msgs.msg import PoseStamped
-from tf2_msgs.msg import TFMessage
-from builtin_interfaces.msg import Time
 from std_msgs.msg import Header
-from message_filters import Cache, Subscriber, ApproximateTimeSynchronizer
-from collections import deque
+from tf2_msgs.msg import TFMessage
 
 # TF2 Imports
-from tf2_ros import TransformException
+from tf2_ros import Buffer, TransformException, TransformListener
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
-
-from ocr_nav.utils.mapping_utils import transform_point_cloud
-
-from typing import List, Tuple, Union
+from tqdm import tqdm
 
 
 def load_image(image_path: Path) -> Image.Image:
@@ -108,7 +100,7 @@ def load_lidar(lidar_path: Path) -> np.ndarray:
     return np.load(lidar_path)
 
 
-def load_livox_poses_timestamps(poses_path: Path) -> Tuple[np.ndarray, np.ndarray]:
+def load_livox_poses_timestamps(poses_path: Path) -> tuple[np.ndarray, np.ndarray]:
     """Load the Livox poses and corresponding timestamps from an npy file.
     Each row in the array is expected to be:
     (tx, ty, tz, qx, qy, qz, qw, timestamp)
@@ -178,7 +170,7 @@ def find_closest(sorted_arr: np.ndarray, target: float) -> int:
 
 def search_latest_poses_within_timestamp_range(
     poses: np.ndarray, timestamps: np.ndarray, start_timestamp_sec_nano: str
-) -> Union[Tuple[np.ndarray, np.int64], Tuple[None, None]]:
+) -> tuple[np.ndarray, np.int64] | tuple[None, None]:
     """Search for the latest pose within a given timestamp range.
 
     Args:

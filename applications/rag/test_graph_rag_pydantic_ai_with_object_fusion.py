@@ -6,18 +6,17 @@ test_graph_rag_llm_query_with_object_fusion.py.  PydanticAI manages the
 tool-calling loop automatically, so we only need to declare tools and deps.
 """
 
-import yaml
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
 from omegaconf import OmegaConf
 from pydantic_ai import Agent, RunContext
 from termcolor import cprint
 
 from ocr_nav.rag.graph_rag import BaseGraphRAG
-from ocr_nav.skills.graph_rag_search_skills import _parse_skills_md, _SKILLS_MD_PATH
+from ocr_nav.skills.graph_rag_search_skills import _SKILLS_MD_PATH, _parse_skills_md
 from ocr_nav.utils.rag_utils import visualize_nodes_edges as _visualize_nodes_edges
-
 
 # ------------------------------------------------------------------ #
 # Dependencies – injected into every tool call via RunContext

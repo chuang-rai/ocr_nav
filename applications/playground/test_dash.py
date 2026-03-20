@@ -1,9 +1,9 @@
-import dash
-from dash import html, dcc, Input, Output, State
-from pyvis.network import Network
-import flask
 import os
-import uuid  # Used to force the Iframe to refresh
+
+import dash
+import flask
+from dash import Input, Output, State, dcc, html
+from pyvis.network import Network
 
 # 1. SETUP PATHS
 IMAGE_DIR = "/home/chuang/hcg/projects/control_suite/temp/lab_downstairs_test_2/rgb/"

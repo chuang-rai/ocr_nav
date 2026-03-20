@@ -1,24 +1,23 @@
-import os
 import threading
+
+import cv2
 import numpy as np
-from pathlib import Path
-from tqdm import tqdm
 import open3d as o3d
 import pyvista as pv
-import cv2
 import rclpy
-from ocr_nav.utils.io_utils import FolderIO, SubscriberIO
+from tqdm import tqdm
+
 from ocr_nav.scene_graph.floor_graph import FloorGraph
-from ocr_nav.utils.mapping_utils import project_points, downsample_point_cloud, points_to_mesh, segment_floor
+from ocr_nav.utils.io_utils import SubscriberIO
+from ocr_nav.utils.mapping_utils import downsample_point_cloud, points_to_mesh
 from ocr_nav.utils.pyvista_vis_utils import (
+    convert_open3d_mesh_to_pyvista,
+    create_plotter,
+    draw_coordinate,
     draw_cube,
     draw_line,
-    draw_sphere,
-    draw_text,
     draw_point_cloud,
-    draw_coordinate,
-    create_plotter,
-    convert_open3d_mesh_to_pyvista,
+    draw_sphere,
 )
 
 

@@ -1,19 +1,10 @@
 from pathlib import Path
-from dataclasses import dataclass
-import re
+
 import numpy as np
-import cv2
-from scipy.spatial.transform import Rotation as R
-import open3d as o3d
-import networkx as nx
-import matplotlib.pyplot as plt
-from collections import defaultdict
-from typing import List, Tuple
 import open3d as o3d
 
-from ocr_nav.utils.io_utils import load_pose, load_depth, load_intrinsics
+from ocr_nav.utils.io_utils import load_depth, load_intrinsics, load_pose
 from ocr_nav.utils.mapping_utils import backproject_depth_map
-
 
 pose_dir = Path(
     "/home/chuang/hcg/projects/ocr/data/giorgio_data/gtonetti_data_zurich_hb_3_merged_pose_zed_gen2_depth_fs_zurich_hb_3_5_bag_zurich_hb_3_5_2/pose"

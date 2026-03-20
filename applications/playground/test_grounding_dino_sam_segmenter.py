@@ -1,10 +1,12 @@
 import argparse
-import rclpy
+from pathlib import Path
+
 import cv2
 import numpy as np
-from pathlib import Path
-from ocr_nav.utils.segmentation_utils import GroundingDinoSamSegmenter
+import rclpy
+
 from ocr_nav.utils.io_utils import BagIO
+from ocr_nav.utils.segmentation_utils import GroundingDinoSamSegmenter
 
 
 def main():

@@ -1,10 +1,9 @@
-import numpy as np
 import cv2
+import matplotlib.pyplot as plt
+import numpy as np
 import open3d as o3d
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import find_peaks
-import matplotlib.pyplot as plt
-from typing import Tuple, Union, List
 
 
 def backproject_point(depth: np.ndarray, intrinsics: np.ndarray, u: int, v: int) -> np.ndarray:
@@ -47,7 +46,7 @@ def backproject_depth_map(depth: np.ndarray, intrinsics: np.ndarray) -> np.ndarr
     return points_3d
 
 
-def project_points(pc: np.ndarray, intrinsics: np.ndarray, w: int, h: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def project_points(pc: np.ndarray, intrinsics: np.ndarray, w: int, h: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Project 3D points to 2D image plane.
 
     Args:
@@ -74,7 +73,7 @@ def project_points(pc: np.ndarray, intrinsics: np.ndarray, w: int, h: int) -> Tu
 
 
 def downsample_point_cloud(
-    pc: Union[np.ndarray, o3d.geometry.PointCloud], voxel_size: float = 0.05
+    pc: np.ndarray | o3d.geometry.PointCloud, voxel_size: float = 0.05
 ) -> o3d.geometry.PointCloud:
     """Apply voxel downsampling to a point cloud.
 
@@ -94,9 +93,7 @@ def downsample_point_cloud(
     return pcd
 
 
-def points_to_mesh(
-    pc: Union[np.ndarray, o3d.geometry.PointCloud], voxel_size: float = 0.05
-) -> o3d.geometry.TriangleMesh:
+def points_to_mesh(pc: np.ndarray | o3d.geometry.PointCloud, voxel_size: float = 0.05) -> o3d.geometry.TriangleMesh:
     """Create a mesh with the point cloud based on ball pivoting algorithm.
 
     Args:
@@ -188,7 +185,7 @@ def select_points_in_masks(
 
 def select_points_in_masks_batch(
     masks: np.ndarray, pc_image_2d: np.ndarray, pc_image_3d: np.ndarray
-) -> List[o3d.geometry.PointCloud]:
+) -> list[o3d.geometry.PointCloud]:
     """Select 3D points from a point cloud for each mask in a batch.
 
     Args:
@@ -197,7 +194,7 @@ def select_points_in_masks_batch(
         pc_image_3d (np.ndarray): (N, 3) array of corresponding 3D points.
 
     Returns:
-        List[o3d.geometry.PointCloud]: List of point clouds containing only the selected 3D points for each mask.
+        list[o3d.geometry.PointCloud]: List of point clouds containing only the selected 3D points for each mask.
     """
     pc_list = []
     ids = masks[:, pc_image_2d[:, 1].astype(int), pc_image_2d[:, 0].astype(int)]  # (M, N)
@@ -254,7 +251,7 @@ def get_largest_region(binary_map: np.ndarray) -> np.ndarray:
     return output[1] == id
 
 
-def select_points_near_heights(pc: np.ndarray, heights: np.ndarray, threshold: float = 0.05) -> List[np.ndarray]:
+def select_points_near_heights(pc: np.ndarray, heights: np.ndarray, threshold: float = 0.05) -> list[np.ndarray]:
     """Select points whose z values are within a range at certain heights.
 
     Args:
@@ -263,7 +260,7 @@ def select_points_near_heights(pc: np.ndarray, heights: np.ndarray, threshold: f
         threshold (float, optional): Threshold range around each height. Defaults to 0.05.
 
     Returns:
-        List[np.ndarray]: List of point clouds near each height.
+        list[np.ndarray]: List of point clouds near each height.
     """
     mask = np.zeros(pc.shape[0], dtype=bool)
     pc_list = []

@@ -1,36 +1,38 @@
 import json
 from pathlib import Path
-import numpy as np
-import networkx as nx
-from tqdm import tqdm
+
 import cv2
-import open3d as o3d
 import matplotlib.pyplot as plt
+import networkx as nx
+import numpy as np
+import open3d as o3d
+import rclpy
+from scipy.ndimage import binary_closing, binary_erosion
 from scipy.signal import find_peaks
+from scipy.spatial import Voronoi
 from scipy.spatial.distance import cdist
 from sklearn.cluster import DBSCAN
-from scipy.spatial import Voronoi
-from scipy.ndimage import binary_erosion, binary_closing
+from tqdm import tqdm
+
 from ocr_nav.scene_graph.pose_graph import PoseGraph
+from ocr_nav.utils.io_utils import (
+    BagIO,
+    FolderIO,
+    SubscriberIO,
+    load_livox_poses_timestamps,
+    search_latest_poses_within_timestamp_range,
+)
 from ocr_nav.utils.mapping_utils import (
+    get_largest_region,
     project_points,
     segment_floor,
     select_points_in_masks,
     select_points_near_heights,
-    transform_point_cloud,
     to_o3d_pc,
-    get_largest_region,
+    transform_point_cloud,
 )
+from ocr_nav.utils.pyvista_vis_utils import PointCloudBoxSelector
 from ocr_nav.utils.segmentation_utils import GroundingDinoSamSegmenter
-from ocr_nav.utils.io_utils import (
-    load_livox_poses_timestamps,
-    search_latest_poses_within_timestamp_range,
-    FolderIO,
-    SubscriberIO,
-    BagIO,
-)
-from ocr_nav.utils.pyvista_vis_utils import create_plotter, PointCloudBoxSelector
-import rclpy
 
 
 class FloorGraph:

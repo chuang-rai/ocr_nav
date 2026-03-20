@@ -1,12 +1,13 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
-import os
 
-import numpy as np
+import os
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+import cv2
+import numpy as np
 import open3d as o3d
 from pyvis.network import Network
-import cv2
 
 if TYPE_CHECKING:
     from ocr_nav.rag.graph_rag import BaseGraphRAG
@@ -192,7 +193,7 @@ def visualize_graphrag_query_result(
             pass
 
     net.show_buttons(filter_=["physics"])
-    net.show((query_result_dir / f"graph_rag_query_result.html").as_posix(), notebook=False)
+    net.show((query_result_dir / "graph_rag_query_result.html").as_posix(), notebook=False)
 
 
 def visualize_nodes_edges(
@@ -283,5 +284,5 @@ def visualize_nodes_edges(
         color = "red" if rel_type == "IsSame" else "blue"
         net.add_edge(src_type + "_" + str(src_id), tar_type + "_" + str(tar_id), title=rel_type, color=color)
     net.show_buttons(filter_=["physics"])
-    net.show((query_result_dir / f"graph_rag_query_result.html").as_posix(), notebook=False)
+    net.show((query_result_dir / "graph_rag_query_result.html").as_posix(), notebook=False)
     o3d.visualization.draw_geometries(obj_pc_list + [map_pc])

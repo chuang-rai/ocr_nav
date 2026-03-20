@@ -1,7 +1,7 @@
-from PIL import Image
 import requests
 import torch
-from transformers import AutoProcessor, AutoModel
+from PIL import Image
+from transformers import AutoModel, AutoProcessor
 
 # 1. Load the model and processor
 model_id = "google/siglip2-so400m-patch14-384"  # Example variant

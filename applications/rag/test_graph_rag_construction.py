@@ -1,7 +1,9 @@
+import argparse
 import os
 from pathlib import Path
+
 from tqdm import tqdm
-import argparse
+
 from ocr_nav.rag.graph_rag import SimpleObjectFrameGraphRAG
 from ocr_nav.utils.io_utils import FolderIO
 

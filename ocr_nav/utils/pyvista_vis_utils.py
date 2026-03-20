@@ -1,10 +1,9 @@
-import pyvista as pv
-import open3d as o3d
 import numpy as np
-from typing import List, Optional
+import open3d as o3d
+import pyvista as pv
 
 
-def plot_text_at_location(text: str, location: List[float], plotter: pv.Plotter):
+def plot_text_at_location(text: str, location: list[float], plotter: pv.Plotter):
     text_actor = pv.Text3D(text, depth=0.01)
     text_actor.translate(location)
     plotter.add_mesh(text_actor, color="black")
@@ -23,10 +22,10 @@ def draw_sphere(center: np.ndarray, radius: float = 0.03) -> pv.PolyData:
 def draw_text(
     text: str,
     position: np.ndarray,
-    depth: Optional[float] = None,
-    width: Optional[float] = None,
-    height: Optional[float] = None,
-    normal: Optional[np.ndarray] = None,
+    depth: float | None = None,
+    width: float | None = None,
+    height: float | None = None,
+    normal: np.ndarray | None = None,
 ) -> pv.PolyData:
     normal_list = [normal[0], normal[1], normal[2]] if normal is not None else None
     text_actor = pv.Text3D(
@@ -67,7 +66,7 @@ def create_plotter() -> pv.Plotter:
 
 
 def draw_point_cloud(
-    plotter: pv.Plotter, points: np.ndarray, color: Optional[np.ndarray] = None, point_size: float = 5.0
+    plotter: pv.Plotter, points: np.ndarray, color: np.ndarray | None = None, point_size: float = 5.0
 ) -> pv.Plotter:
     point_cloud = pv.PolyData(points)
     point_cloud["colors"] = color if color is not None else np.array([[0.0, 0.0, 1.0]] * points.shape[0])
@@ -86,7 +85,7 @@ def convert_open3d_mesh_to_pyvista(mesh: o3d.geometry.TriangleMesh) -> pv.PolyDa
     return pv_mesh
 
 
-def draw_image(plotter: pv.Plotter, image: np.ndarray, position: List[float], scale: float = 1.0) -> pv.Plotter:
+def draw_image(plotter: pv.Plotter, image: np.ndarray, position: list[float], scale: float = 1.0) -> pv.Plotter:
     texture = pv.Texture(image)
     plane = pv.Plane(center=position, direction=(0, 1, 0), i_size=image.shape[1] * scale, j_size=image.shape[0] * scale)
     plane.rotate_y(90, point=position, inplace=True)

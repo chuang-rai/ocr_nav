@@ -1,17 +1,16 @@
 from pathlib import Path
-import time
-from tqdm import tqdm
-from visualization_msgs.msg import Marker, MarkerArray
+
+import numpy as np
 import rclpy
 from rclpy.node import Node
-import numpy as np
-from typing import List
+from tqdm import tqdm
+from visualization_msgs.msg import Marker, MarkerArray
 
 from ocr_nav.scene_graph.floor_graph import FloorGraph
 
 
 def draw_cube(
-    center: np.ndarray, frame_id: str = "map", size: float = 0.1, color: List[float] = [1.0, 0.0, 0.0]
+    center: np.ndarray, frame_id: str = "map", size: float = 0.1, color: list[float] = [1.0, 0.0, 0.0]
 ) -> Marker:
     marker = Marker()
     marker.header.frame_id = frame_id
@@ -31,7 +30,7 @@ def draw_cube(
 
 
 def draw_sphere(
-    center: np.ndarray, frame_id: str = "map", radius: float = 0.1, color: List[float] = [0.0, 1.0, 0.0]
+    center: np.ndarray, frame_id: str = "map", radius: float = 0.1, color: list[float] = [0.0, 1.0, 0.0]
 ) -> Marker:
     marker = Marker()
     marker.header.frame_id = frame_id
@@ -55,7 +54,7 @@ def draw_line(
     point2: np.ndarray,
     frame_id: str = "map",
     line_width: float = 0.05,
-    color: List[float] = [0.0, 0.0, 1.0],
+    color: list[float] = [0.0, 0.0, 1.0],
 ) -> Marker:
     marker = Marker()
     marker.header.frame_id = frame_id

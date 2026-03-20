@@ -1,9 +1,11 @@
-import yaml
 from pathlib import Path
-from omegaconf import OmegaConf
-from termcolor import cprint
+
+import yaml
 from google.genai import types
+from omegaconf import OmegaConf
 from rai_ai_core_library.utils import dynamic_model
+from termcolor import cprint
+
 from ocr_nav.rag.graph_rag import BaseGraphRAG
 from ocr_nav.skills.graph_rag_search_skills import GraphRAGSearchSkills
 
@@ -13,9 +15,6 @@ def main():
     config_path = config_dir / "floor_graph_config.yaml"
     args = OmegaConf.load(config_path.as_posix())
     bag_path = Path(args.bag_path)
-    annotation_dir = bag_path.parent / "qwen3vl_annotations_fast_8b"
-    rgb_dir = bag_path.parent / "rgb"
-    rgb_paths = sorted(list(rgb_dir.iterdir()))
 
     graph_rag_path = bag_path.parent / "graph_rag"
     graph_rag = BaseGraphRAG(graph_rag_path.as_posix(), embedding_model_name="BAAI/bge-m3")
@@ -42,7 +41,6 @@ def main():
         history = []
         history.append(types.Content(role="user", parts=[types.Part.from_text(text=query_text)]))
         for _ in range(20):  # limit the number of retrieval and reasoning iterations to prevent infinite loop
-
             response = gemini.client.models.generate_content(
                 model=gemini.model_name,
                 contents=history,

@@ -1,5 +1,5 @@
-from rai_ai_core_library.llm.gemini import GeminiQueryInterface
 from google.genai import types
+from rai_ai_core_library.llm.gemini import GeminiQueryInterface
 
 
 class GeminiPlusQueryInterface(GeminiQueryInterface):

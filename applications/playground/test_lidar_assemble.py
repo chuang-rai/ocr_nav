@@ -1,18 +1,9 @@
 from pathlib import Path
-from dataclasses import dataclass
-import re
+
 import numpy as np
-import cv2
-from scipy.spatial.transform import Rotation as R
-import open3d as o3d
-import networkx as nx
-import matplotlib.pyplot as plt
-from collections import defaultdict
-from typing import List, Tuple
 import open3d as o3d
 
-from ocr_nav.utils.io_utils import load_pose, load_depth, load_intrinsics, load_lidar
-from ocr_nav.utils.mapping_utils import backproject_depth_map
+from ocr_nav.utils.io_utils import load_intrinsics, load_lidar, load_pose
 
 
 def main():

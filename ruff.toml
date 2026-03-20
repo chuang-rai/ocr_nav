@@ -1,0 +1,57 @@
+# Copyright (c) 2025 Robotics and AI Institute LLC dba RAI Institute. All rights reserved.
+#
+# Repo level ruff configuration, editor specific settings may extend or override
+# some settings here for a better developer experience in .vscode/ruff.vc.toml
+#
+# see: https://docs.astral.sh/ruff/settings/
+
+# increase line length from default 88
+line-length = 120
+
+# the latest version that ROS2 Humble supports
+target-version = "py310"
+
+# ruff respects the .gitignore, but the vscode extension doesn't always so
+# we explicitly force exclusion of the external gitman repos and ros artifacts
+extend-exclude = ["external/", "build/", "install/"]
+force-exclude = true
+
+# ruff uses a default setting of [".", "src"] to differentiate between first and
+# third party packages for import sorting, since our packages are deeply nessted we
+# specify the different package types explicitly here:
+# - first-party packages is anything under src/ and scripts/
+# - third-party packages are anything under external/ (and an exception for launch)
+src = [".", "applications/**", "scripts/**"]
+lint.isort.known-third-party = [
+  "external/**",
+  "launch",
+  "mujoco",
+]
+
+# extend the default linting rules, ruff supports a few hundred linting rules,
+# some of which conflict and some which are overly pedantic/annoying
+# see: https://docs.astral.sh/ruff/rules/ (default rules are: ["E4", "E7", "E9", "F"])
+lint.extend-select = [
+  "E",    # pycodestyle errors: https://docs.astral.sh/ruff/rules/#error-e
+  "F",    # pyflakes (default): https://docs.astral.sh/ruff/rules/#pyflakes-f
+  "I",    # isort (import ordering): https://docs.astral.sh/ruff/rules/#isort-i
+  "UP",   # pyupgrade (code modernization): https://docs.astral.sh/ruff/rules/#pyupgrade-up
+  "W",    # pycodestyle warnings: https://docs.astral.sh/ruff/rules/#warning-w
+]
+
+# if any of the specific rules become problematic we can disable them selectively here
+lint.ignore = [
+  "UP015",  # keep redundant "r" mode in open(): https://docs.astral.sh/ruff/rules/redundant-open-modes/
+]
+
+# jupyter notebook file type specific overrides, we are much less strict on notebooks and allow a lot
+# more general conveniences and flexibility for development / data analysis
+[lint.extend-per-file-ignores]
+"*.ipynb" = [
+  "E402",  # do not require imports to be at top of the notebook
+  "E501",  # allow lines to exceed line-length above
+  "E731",  # allow lambda definitions instead of using single line def
+  "E741",  # allow single letter "ambiguous" variable names
+  "F811",  # allow redefinitions of unused variables across different cells
+  "F821",  # allow variable use before declaration based on cell ordering
+]

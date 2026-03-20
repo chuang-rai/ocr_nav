@@ -1,8 +1,9 @@
 import os
-from transformers import AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
-from vllm import LLM, SamplingParams
-from qwen_vl_utils import process_vision_info
+
 import torch
+from qwen_vl_utils import process_vision_info
+from transformers import AutoModelForImageTextToText, AutoProcessor
+from vllm import LLM, SamplingParams
 
 
 class QWen3VLQueryInterface:
@@ -56,7 +57,6 @@ class QWen3VLQueryInterface:
 
 class QWen3VLvLLMQueryInterface:
     def __init__(self, model_name: str = "Qwen/Qwen3-VL-8B-Instruct", quantization: str | None = None):
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
         os.environ["OMP_NUM_THREADS"] = "1"
 

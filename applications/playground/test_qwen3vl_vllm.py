@@ -1,10 +1,9 @@
-# -*- coding: utf-8 -*-
+import os
+
 import torch
 from qwen_vl_utils import process_vision_info
 from transformers import AutoProcessor
 from vllm import LLM, SamplingParams
-
-import os
 
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 

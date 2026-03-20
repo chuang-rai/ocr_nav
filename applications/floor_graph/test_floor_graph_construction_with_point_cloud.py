@@ -1,22 +1,18 @@
 import argparse
-import rclpy
-import cv2
-import open3d as o3d
-from tqdm import tqdm
-import pyvista as pv
+
 import numpy as np
-from pathlib import Path
-from ocr_nav.utils.io_utils import load_ply_point_cloud
+import pyvista as pv
+from tqdm import tqdm
+
 from ocr_nav.scene_graph.floor_graph import FloorGraph
+from ocr_nav.utils.io_utils import load_ply_point_cloud
 from ocr_nav.utils.mapping_utils import downsample_point_cloud, points_to_mesh
 from ocr_nav.utils.pyvista_vis_utils import (
-    draw_cube,
-    draw_line,
-    draw_sphere,
-    draw_point_cloud,
-    draw_coordinate,
-    create_plotter,
     convert_open3d_mesh_to_pyvista,
+    create_plotter,
+    draw_line,
+    draw_point_cloud,
+    draw_sphere,
 )
 
 

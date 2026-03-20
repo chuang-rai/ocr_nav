@@ -7,4 +7,9 @@
 *.dylib
 *.dll
 ocr_nav/applications/rag/lib
-lib
+.github/*
+lib# pixi environments
+.pixi/*
+!.pixi/config.toml
+
+**/lib

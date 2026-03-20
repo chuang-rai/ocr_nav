@@ -1,16 +1,15 @@
-import os
+import argparse
 import json
+import os
+from pathlib import Path
+
+import cv2
 import numpy as np
 import yaml
-import argparse
-from tqdm import tqdm
-from pathlib import Path
-import cv2
-
-import yaml
 from rai_ai_core_library.utils import dynamic_model
+from tqdm import tqdm
 
-from ocr_nav.utils.io_utils import FolderIO, encode_image_to_bytes, numpy_img2bytes_pil
+from ocr_nav.utils.io_utils import FolderIO, encode_image_to_bytes
 from ocr_nav.utils.visualization_utils import draw_bounding_boxes_on_image_np
 
 

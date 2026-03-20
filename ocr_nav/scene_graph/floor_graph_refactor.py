@@ -206,12 +206,12 @@ class FloorGraph:
         assert hasattr(self, "full_pc_list"), "full_pc_list not initialized."
         assert hasattr(self, "pose_list"), "pose_list not initialized."
 
-        assert (
-            len(pc_lidar_list) == len(self.full_ground_pc_list) == len(self.full_pc_list)
-        ), "LiDAR lists length mismatch."
-        assert isinstance(
-            self.full_ground_pc_list[0], o3d.geometry.PointCloud
-        ), "full_ground_pc_list not initialized properly."
+        assert len(pc_lidar_list) == len(self.full_ground_pc_list) == len(self.full_pc_list), (
+            "LiDAR lists length mismatch."
+        )
+        assert isinstance(self.full_ground_pc_list[0], o3d.geometry.PointCloud), (
+            "full_ground_pc_list not initialized properly."
+        )
         assert isinstance(self.full_pc_list[0], o3d.geometry.PointCloud), "full_pc_list not initialized properly."
 
         self.pose_list.append(anchor_lidar_pose)

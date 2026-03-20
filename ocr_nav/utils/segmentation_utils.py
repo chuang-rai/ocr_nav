@@ -1,9 +1,7 @@
-import yaml
 import numpy as np
-from rai_ai_core_library.detection.grounding_dino import GroundingDino
-from rai_ai_core_library.segmentation.sam import Sam
-from rai_ai_core_library.utils import dynamic_model
+import yaml
 from rai_ai_core_library.base_models import DetectionResult
+from rai_ai_core_library.utils import dynamic_model
 
 
 class GroundingDinoSamSegmenter:

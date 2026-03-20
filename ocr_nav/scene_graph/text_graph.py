@@ -1,10 +1,10 @@
 from collections import defaultdict
 from dataclasses import dataclass
+
 import numpy as np
+
 from ocr_nav.scene_graph.pose_graph import PoseGraph
 from ocr_nav.utils.levenshtein_utils import levenshtein_distance
-from typing import List, Optional
-import networkx as nx
 
 
 @dataclass
@@ -21,14 +21,14 @@ class TextBag:
     pc: (N, 3) 3D points associated with the text observations.
     """
 
-    text_dict: defaultdict[str, List[int]]  # map from text to the frame id
-    pc: Optional[np.ndarray] = None  # (N, 3)
+    text_dict: defaultdict[str, list[int]]  # map from text to the frame id
+    pc: np.ndarray | None = None  # (N, 3)
 
 
 class TextGraph(PoseGraph):
     """Class for storing text observations associated with pose nodes in PoseGraph."""
 
-    def add_text_to_pose(self, pose_id: int, text: str, pos_3d: Optional[np.ndarray] = None):
+    def add_text_to_pose(self, pose_id: int, text: str, pos_3d: np.ndarray | None = None):
         text_dict = defaultdict(list)
         text_dict[text] = [pose_id]
         new_text_node = TextBag(text_dict=text_dict, pc=pos_3d.reshape((1, 3)) if pos_3d is not None else None)

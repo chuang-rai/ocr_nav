@@ -1,16 +1,15 @@
+import argparse
+import json
 import os
 from pathlib import Path
-import json
+
 import cv2
-from tqdm import tqdm
 import numpy as np
-import argparse
-from transformers import AutoModelForImageTextToText, AutoProcessor
-import torch
+from tqdm import tqdm
+
+from ocr_nav.utils.io_utils import FolderIO, encode_image_to_base64_string
 from ocr_nav.utils.visualization_utils import draw_bounding_boxes_on_image_np
-from ocr_nav.vlm.qwen3_vl import QWen3VLQueryInterface, QWen3VLvLLMQueryInterface
-from ocr_nav.utils.io_utils import FolderIO, encode_image_to_bytes, encode_image_to_base64_string
-from ocr_nav.utils.visualization_utils import draw_bounding_boxes_on_image_np
+from ocr_nav.vlm.qwen3_vl import QWen3VLvLLMQueryInterface
 
 
 def main():

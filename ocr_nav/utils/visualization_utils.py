@@ -1,11 +1,10 @@
-import numpy as np
 import cv2
-from PIL import Image, ImageDraw, ImageFont
+import numpy as np
 import open3d as o3d
-from typing import List, Tuple
+from PIL import Image, ImageDraw, ImageFont
 
 
-def extract_coordinates_and_label(ref_text) -> Tuple[str, List[List[float]]]:
+def extract_coordinates_and_label(ref_text) -> tuple[str, list[list[float]]]:
 
     try:
         label_type = ref_text[1]
@@ -17,7 +16,7 @@ def extract_coordinates_and_label(ref_text) -> Tuple[str, List[List[float]]]:
     return (label_type, cor_list)
 
 
-def draw_bounding_boxes(image: Image.Image, refs: List[Tuple[str, str, str]], output_dir: str) -> Image.Image:
+def draw_bounding_boxes(image: Image.Image, refs: list[tuple[str, str, str]], output_dir: str) -> Image.Image:
 
     image_width, image_height = image.size
     img_draw = image.copy()
@@ -85,7 +84,7 @@ def draw_bounding_boxes(image: Image.Image, refs: List[Tuple[str, str, str]], ou
     return img_draw
 
 
-def draw_cube(center: np.ndarray, size: float = 0.05, color: List[float] = [0, 1, 0]) -> o3d.geometry.TriangleMesh:
+def draw_cube(center: np.ndarray, size: float = 0.05, color: list[float] = [0, 1, 0]) -> o3d.geometry.TriangleMesh:
     cube = o3d.geometry.TriangleMesh.create_box(width=size, height=size, depth=size)
     cube.paint_uniform_color(color)
     cube.compute_vertex_normals()
@@ -102,7 +101,7 @@ def draw_coordinate(origin: np.ndarray, size: float = 0.1) -> o3d.geometry.Trian
 def draw_line(
     pos1: np.ndarray,
     pos2: np.ndarray,
-    color: List[float] = [1, 0, 0],
+    color: list[float] = [1, 0, 0],
 ) -> o3d.geometry.LineSet:
     # draw line between two points
     points = [pos1, pos2]

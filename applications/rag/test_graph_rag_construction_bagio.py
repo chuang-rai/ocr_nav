@@ -1,27 +1,25 @@
-import os
 import copy
-from time import time
-from collections import defaultdict
-import shutil
 import json
+import os
+import shutil
+from collections import defaultdict
+from pathlib import Path
+from time import time
+
 import numpy as np
 import open3d as o3d
-import cv2
 import rclpy
 from omegaconf import OmegaConf
-from pathlib import Path
 from rai_ai_core_library.utils import dynamic_model
-from ocr_nav.rag.graph_rag import BaseGraphRAG
-from ocr_nav.matcher.xfeat_matcher import XFeatMatcher
+
 from ocr_nav.matcher.pc_associator import GlobalFragmentAssociator
+from ocr_nav.matcher.xfeat_matcher import XFeatMatcher
+from ocr_nav.rag.graph_rag import BaseGraphRAG
 from ocr_nav.utils.io_utils import BagIO
-from ocr_nav.utils.visualization_utils import visualize_masks_on_image
 from ocr_nav.utils.mapping_utils import (
-    select_points_in_masks_batch,
     project_points,
+    select_points_in_masks_batch,
     transform_point_cloud,
-    to_numpy_pc,
-    to_o3d_pc,
 )
 
 
@@ -122,7 +120,9 @@ def link_bbox_to_object(
 
 
 def merge_pc_and_resample(
-    pc1: o3d.geometry.PointCloud, pc2: o3d.geometry.PointCloud, voxel_size: float | None = None
+    pc1: o3d.geometry.PointCloud,
+    pc2: o3d.geometry.PointCloud,
+    voxel_size: float | None = None,
 ) -> o3d.geometry.PointCloud:
     """Merge two point clouds and resample to a fixed number of points."""
     merged_pc = pc1 + pc2
@@ -137,7 +137,6 @@ def get_masked_pc_list_in_cam_frame(
     lidar2camera_tfs = bagio.get_lidar2camera_tfs()
     # tf_camera2anchor_lidar = np.linalg.inv(lidar2camera_tfs[bagio.anchor_lidar_id])
     tf_lidar2camera = lidar2camera_tfs[use_lidar_id]
-    tf_camera2lidar = np.linalg.inv(lidar2camera_tfs[use_lidar_id])
     intr_mat = bagio.get_intrinsics()
     h, w = bagio.get_image_size()
 
@@ -161,7 +160,12 @@ def create_new_object(graph_rag, global_obj_id, obj_ann, embedding_list, attrs_l
     )
 
 
-def add_object_pc(object_pc_dict: dict, object_id: int, pc: o3d.geometry.PointCloud, pose: np.ndarray = np.eye(4)):
+def add_object_pc(
+    object_pc_dict: dict,
+    object_id: int,
+    pc: o3d.geometry.PointCloud,
+    pose: np.ndarray = np.eye(4),
+):
     """Add a point cloud to the global object point cloud dictionary."""
     transformed_pc = copy.deepcopy(pc).transform(pose)
     if object_id in object_pc_dict:
@@ -219,7 +223,11 @@ def associate_fragments(
 
 
 def try_associate_with_past(
-    graph_rag: BaseGraphRAG, sim_mat: np.ndarray, bbox_id: int, last_global_bbox_ids: list[int], threshold: float = 0.8
+    graph_rag: BaseGraphRAG,
+    sim_mat: np.ndarray,
+    bbox_id: int,
+    last_global_bbox_ids: list[int],
+    threshold: float = 0.8,
 ):
     """
     Try to find a matching past object via similarity matrix.
@@ -290,7 +298,10 @@ def setup_graph_rag(bag_path, graph_rag_name, cache_segmentation=True):
         cache_dir = graph_rag_path / (bag_name + "_semantic_seg")
         os.makedirs(cache_dir, exist_ok=True)
     graph_rag = BaseGraphRAG(graph_rag_path.as_posix(), overwrite=True, embedding_model_name="BAAI/bge-m3")
-    graph_rag.define_node_type("Object", {"id": int, "labels": [str], "embedding": (float, 1024), "attributes": [str]})
+    graph_rag.define_node_type(
+        "Object",
+        {"id": int, "labels": [str], "embedding": (float, 1024), "attributes": [str]},
+    )
     graph_rag.define_node_type("Bbox", {"id": int, "bbox": (int, 4)})
     graph_rag.define_node_type("Frame", {"id": int, "timestamp": str, "caption": str, "pose": (float, 16)})
     graph_rag.define_relationship_type("FrameContainsBbox", "Frame", "Bbox", {"from_id": int, "to_id": int})
@@ -329,7 +340,6 @@ def main():
     anno_paths = sorted(list(annotation_dir.iterdir()))
     timelist = [int(anno_path.stem.split("_")[1]) for anno_path in anno_paths]
 
-    anchor_lidar_id = args.bagio.anchor_lidar_id
     os.makedirs(annotation_dir, exist_ok=True)
     rclpy.init()
 
@@ -345,10 +355,10 @@ def main():
     global_obj_id = 0
     last_img_np = None
     last_bbox_list = None
+    last_bbox_anno_list = None
     last_global_bbox_ids = None
     global_obj_pc_dict = {}  # global_object_id -> point cloud
     global_obj_tracks_dict = defaultdict(list)  # global_object_id -> list of (frame_id, bbox)
-    global_id2associator_id_map = {}
     global_fragment_associator = GlobalFragmentAssociator(threshold=0.3, voxel_size_list=[0.1, 0.2, 0.5, 1.0])
 
     while bagio.has_next():

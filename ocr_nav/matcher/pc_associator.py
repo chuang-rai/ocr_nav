@@ -1,7 +1,7 @@
 import numpy as np
 import open3d as o3d
-from ocr_nav.utils.voxel_iou_utils import compute_voxel_iou
-from ocr_nav.utils.mapping_utils import to_numpy_pc, to_o3d_pc
+
+from ocr_nav.utils.mapping_utils import to_numpy_pc
 
 
 class GlobalFragmentAssociator:
@@ -27,7 +27,10 @@ class GlobalFragmentAssociator:
     def compute_voxel_iou(
         self, voxel_grid1: set[tuple[int, int, int]], voxel_grid2: set[tuple[int, int, int]]
     ) -> float:
-        iou = compute_voxel_iou(voxel_grid1, voxel_grid2)
+        intersection = len(voxel_grid1.intersection(voxel_grid2))
+        union = len(voxel_grid1.union(voxel_grid2))
+
+        iou = intersection / union if union > 0 else 0
         return iou
 
     def compute_hierarchical_voxel_iou(

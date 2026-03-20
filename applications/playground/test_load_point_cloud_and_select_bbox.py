@@ -1,8 +1,5 @@
-import os
-import pyvista as pv
-import numpy as np
 from ocr_nav.utils.io_utils import load_ply_point_cloud
-from ocr_nav.utils.pyvista_vis_utils import create_plotter, PointCloudBoxSelector
+from ocr_nav.utils.pyvista_vis_utils import PointCloudBoxSelector, create_plotter
 
 
 def main():

@@ -1,10 +1,10 @@
+import argparse
 import asyncio
-import re
 import os
 import pathlib
+import re
 import time
 
-import argparse
 import torch
 
 if torch.version.cuda == "11.8":  # type: ignore
@@ -13,20 +13,17 @@ if torch.version.cuda == "11.8":  # type: ignore
 os.environ["VLLM_USE_V1"] = "0"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
+from ocr_nav.ocr_nav.utils.io_utils import load_image
+from ocr_nav.ocr_nav.utils.visualization_utils import draw_bounding_boxes
+from tqdm import tqdm
 from vllm import AsyncLLMEngine, SamplingParams
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.model_executor.models.registry import ModelRegistry
-import time
-from ocr_nav.thirdparty.deepseek_ocr.deepseek_ocr import DeepseekOCRForCausalLM
-from PIL import Image, ImageDraw, ImageFont, ImageOps
-import numpy as np
-from tqdm import tqdm
-from ocr_nav.thirdparty.deepseek_ocr.process.ngram_norepeat import NoRepeatNGramLogitsProcessor
-from ocr_nav.thirdparty.deepseek_ocr.process.image_process import DeepseekOCRProcessor
-from ocr_nav.thirdparty.deepseek_ocr.config import MODEL_PATH, INPUT_PATH, OUTPUT_PATH, PROMPT, CROP_MODE
-from ocr_nav.ocr_nav.utils.io_utils import load_image
-from ocr_nav.ocr_nav.utils.visualization_utils import draw_bounding_boxes
 
+from ocr_nav.thirdparty.deepseek_ocr.config import CROP_MODE, MODEL_PATH, PROMPT
+from ocr_nav.thirdparty.deepseek_ocr.deepseek_ocr import DeepseekOCRForCausalLM
+from ocr_nav.thirdparty.deepseek_ocr.process.image_process import DeepseekOCRProcessor
+from ocr_nav.thirdparty.deepseek_ocr.process.ngram_norepeat import NoRepeatNGramLogitsProcessor
 
 ModelRegistry.register_model("DeepseekOCRForCausalLM", DeepseekOCRForCausalLM)
 
@@ -85,7 +82,7 @@ async def stream_generate(image=None, prompt=""):
     elif prompt:
         request = {"prompt": prompt}
     else:
-        assert False, f"prompt is none!!!"
+        assert False, "prompt is none!!!"
     async for request_output in engine.generate(request, sampling_params, request_id):  # type: ignore
         if request_output.outputs:
             full_text = request_output.outputs[0].text
@@ -99,7 +96,6 @@ async def stream_generate(image=None, prompt=""):
 
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--input_dir",
@@ -132,7 +128,6 @@ if __name__ == "__main__":
         image = image.convert("RGB")
 
         if "<image>" in PROMPT:
-
             image_features = DeepseekOCRProcessor().tokenize_with_images(
                 images=[image], bos=True, eos=True, cropping=CROP_MODE
             )
@@ -160,7 +155,7 @@ if __name__ == "__main__":
             result = process_image_with_refs(image_draw, matches_ref, args.output_dir)
 
             for idx, a_match_image in enumerate(tqdm(matches_images, desc="image")):
-                outputs = outputs.replace(a_match_image, f"![](images/" + str(idx) + ".jpg)\n")
+                outputs = outputs.replace(a_match_image, "![](images/" + str(idx) + ".jpg)\n")
 
             for idx, a_match_other in enumerate(tqdm(mathes_other, desc="other")):
                 outputs = outputs.replace(a_match_other, "").replace("\\coloneqq", ":=").replace("\\eqqcolon", "=:")
@@ -201,7 +196,6 @@ if __name__ == "__main__":
                         pass
 
                 for endpoint in endpoints:
-
                     label = endpoint.split(": ")[0]
                     (x, y) = eval(endpoint.split(": ")[1])
                     ax.annotate(

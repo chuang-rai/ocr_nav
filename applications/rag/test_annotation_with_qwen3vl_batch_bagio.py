@@ -1,17 +1,15 @@
+import argparse
+import json
 import os
 from pathlib import Path
-import json
+
 import cv2
-from tqdm import tqdm
-import numpy as np
-import argparse
-from transformers import AutoModelForImageTextToText, AutoProcessor
-import torch
 import rclpy
+
+from ocr_nav.utils.io_utils import BagIO, encode_image_to_base64_string
 from ocr_nav.utils.visualization_utils import draw_bounding_boxes_on_image_np
-from ocr_nav.vlm.qwen3_vl import QWen3VLQueryInterface, QWen3VLvLLMQueryInterface
-from ocr_nav.utils.io_utils import BagIO, encode_image_to_bytes, encode_image_to_base64_string
-from ocr_nav.utils.visualization_utils import draw_bounding_boxes_on_image_np
+from ocr_nav.vlm.prompts import SCENE_ANNOTATION_PROMPT
+from ocr_nav.vlm.qwen3_vl import QWen3VLvLLMQueryInterface
 
 
 def main():
@@ -24,7 +22,6 @@ def main():
     parser.add_argument(
         "--bag_path",
         type=str,
-        # default="/home/chuang/hcg/projects/control_suite/temp/lab_downstairs_test_2/rosbag2_2026_02_02-17_46_19_perception_suite_fix_trimmed_glim",
         default="/home/chuang/hcg/projects/ocr/data/ETH_Bauhalle_long_run_1/rosbag2_2026_01_21-15_13_10_perception_suite_fixed_and_trimmed_glim_tf_static_fix",
         help="Root path to the ROS Bag file (folder)",
     )
@@ -45,49 +42,13 @@ def main():
     batch_images = []
     pi = 0
     while bagio.has_next():
-
         data = bagio.get_next_sync_data()
         if data is None:
             continue
         pc_livox, pc_rslidar, img_np, livox_pose, t_nanosec = data
         img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
-        prompt = (
-            "Describe the scene in the image based on the highlighted areas in the mask. "
-            "Also draw bounding boxes around any objects of interest. "
-            "Please normalize the coordinates to be between 0 and 1000. "
-            "The output format should be in JSON:"
-            """
-        {
-            "description": "A brief description of the scene.",
-            "objects": [
-                {
-                    "label": "object label",
-                    "bounding_box": [x_min, y_min, x_max, y_max],
-                    "attributes": {
-                        "color": "color of the object",
-                        "material": "material of the object",
-                        "function": "function or use of the object",
-                        ...
-                    }
-                },
-                ...
-        }
-        """
-        )
-        new_prompt = "detect everything in the image."
-        "Also draw bounding boxes around any objects of interest. "
-        "Please normalize the coordinates to be between 0 and 1000. "
-        "The output format should be in JSON:"
-        """
-        {
-            "objects": [
-                {"bounding_box": [x_min, y_min, x_max, y_max]},
-                ...
-            ]
-        }
-        """
         image_bytes = encode_image_to_base64_string(img_bgr)
-        batch_images.append((pi, t_nanosec, prompt, image_bytes, img_bgr))
+        batch_images.append((pi, t_nanosec, SCENE_ANNOTATION_PROMPT, image_bytes, img_bgr))
         if len(batch_images) == bs:
             responses = qwen3_vl.batch_query([item[2] for item in batch_images], [item[3] for item in batch_images])
             for response_i, response in enumerate(responses):

@@ -1,5 +1,4 @@
 import numpy as np
-from typing import List
 
 
 def levenshtein_distance(str1: str, str2: str) -> int:
@@ -22,5 +21,5 @@ def levenshtein_distance(str1: str, str2: str) -> int:
     return dist[len1][len2]
 
 
-def levenshtein_distance_batch(str_list1: List[str], str_list2: List[str]) -> List[int]:
+def levenshtein_distance_batch(str_list1: list[str], str_list2: list[str]) -> list[int]:
     return []

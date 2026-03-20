@@ -1,10 +1,9 @@
-# -*- coding: utf-8 -*-
+import os
+
 import torch
 from qwen_vl_utils import process_vision_info
 from transformers import AutoProcessor
 from vllm import LLM, SamplingParams
-
-import os
 
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 
@@ -30,7 +29,6 @@ def prepare_inputs_for_vllm(messages, processor):
 
 
 if __name__ == "__main__":
-
     # TODO: change to your own checkpoint path
     checkpoint_path = "Qwen/Qwen3-1.7B"
     processor = AutoProcessor.from_pretrained(checkpoint_path)
@@ -70,7 +68,7 @@ if __name__ == "__main__":
             {
                 "role": "user",
                 # "content": f"{user_input}",
-                "content": f"Open-vocabulary scene understanding is crucial for robotic applications, enabling robots to comprehend complex 3D environmental contexts and supporting various downstream tasks such as navigation and manipulation. However, achieving accurate scene understanding in real-world scenarios remains challenging.",
+                "content": "Open-vocabulary scene understanding is crucial for robotic applications, enabling robots to comprehend complex 3D environmental contexts and supporting various downstream tasks such as navigation and manipulation. However, achieving accurate scene understanding in real-world scenarios remains challenging.",
             }
         )
         outputs = llm.chat(messages, sampling_params, use_tqdm=False)
