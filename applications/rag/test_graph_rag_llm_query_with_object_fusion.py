@@ -20,7 +20,7 @@ def main():
     graph_rag = BaseGraphRAG(graph_rag_path.as_posix(), embedding_model_name="BAAI/bge-m3")
     # visualize_graphrag(graph_rag, graph_rag_path.parent)
 
-    gemini_config_path = config_dir / "llm" / "gemini_plus.yaml"
+    gemini_config_path = config_dir / "vlm" / "gemini_plus.yaml"
     with open(gemini_config_path, "r") as file:
         gemini_config = yaml.safe_load(file)
     device = "cuda"

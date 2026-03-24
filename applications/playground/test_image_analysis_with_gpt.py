@@ -15,7 +15,7 @@ from ocr_nav.utils.visualization_utils import draw_bounding_boxes_on_image_np
 
 def main():
     config_dir = Path(__file__).parent.parent.parent / "config"
-    gpt_config_path = config_dir / "llm" / "gpt.yaml"
+    gpt_config_path = config_dir / "vlm" / "gpt.yaml"
     with open(gpt_config_path, "r") as file:
         gpt_config = yaml.safe_load(file)
     device = "cuda"

@@ -9,6 +9,8 @@ import numpy as np
 import open3d as o3d
 from pyvis.network import Network
 
+from ocr_nav.utils.visualization_utils import paint_pc_uniform_color
+
 if TYPE_CHECKING:
     from ocr_nav.rag.graph_rag import BaseGraphRAG
 
@@ -112,7 +114,7 @@ def visualize_graphrag_query_result(
     show_img: bool = True,
 ):
     root_path = Path(root_path)
-    rgb_dir = root_path / "rgb"
+    rgb_dir = graph_rag.kuzu_db_dir / "rgb"
     rgb_paths = sorted(list(rgb_dir.iterdir()))
     query_text_str = query_text.replace(" ", "_").replace("/", "_")
     query_result_dir = root_path / "query_results" / query_text_str
@@ -204,10 +206,11 @@ def visualize_nodes_edges(
     edge_list: list[tuple[str, int, str, int]],
 ) -> None:
     root_path = Path(root_path)
-    rgb_dir = root_path / "rgb"
     pc_path = root_path / "glim_map.ply"
+    rgb_dir = graph_rag.kuzu_db_dir / "rgb"
     map_pc = o3d.io.read_point_cloud(pc_path.as_posix())
-    map_pc.paint_uniform_color([0.5, 0.5, 0.5])
+    map_pc = map_pc.voxel_down_sample(voxel_size=0.2)
+    map_pc = paint_pc_uniform_color(map_pc, [0.5, 0.5, 0.5])
     pc_dir = graph_rag.kuzu_db_dir / "object_point_clouds"
     rgb_paths = sorted(list(rgb_dir.iterdir()))
     query_text_str = query_text.replace(" ", "_").replace("/", "_").replace("?", "")
@@ -219,9 +222,9 @@ def visualize_nodes_edges(
         node = graph_rag.retrieve_node_by_id(node_type, node_id)
         if node_type == "Object":
             obj_pc = o3d.io.read_point_cloud((pc_dir / f"object_{node_id:05d}.ply").as_posix())
-            obj_pc.paint_uniform_color(np.random.rand(3))
+            color = np.random.rand(3)
+            obj_pc = paint_pc_uniform_color(obj_pc, color)
             obj_pc_list.append(obj_pc)
-            object_node = graph_rag.retrieve_node_by_id(node_type, node_id)
             net.add_node(
                 node_type + "_" + str(node["id"]),
                 label=",".join(node["labels"]),

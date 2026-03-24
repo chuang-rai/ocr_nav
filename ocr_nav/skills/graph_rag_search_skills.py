@@ -1,4 +1,4 @@
-"""Graph RAG search skills for Gemini native function calling.
+"""Graph RAG search skills for Claude tool use.
 
 Skill definitions (system prompt + tool schemas) live in the companion markdown file
 ``graph_rag_search_skills.md``. This module parses that file at init time and
@@ -15,26 +15,16 @@ Usage:
     fn_response = skills.execute(fn_name, fn_args)
 """
 
+import json
 import re
 from pathlib import Path
 
-from google.genai import types
 from termcolor import cprint
 
 from ocr_nav.rag.graph_rag import BaseGraphRAG
 from ocr_nav.utils.rag_utils import visualize_nodes_edges
 
 _SKILLS_MD_PATH = Path(__file__).with_suffix(".md")
-
-# Mapping from markdown type names to Gemini Schema types
-_TYPE_MAP = {
-    "STRING": "STRING",
-    "INTEGER": "INTEGER",
-    "NUMBER": "NUMBER",
-    "BOOLEAN": "BOOLEAN",
-    "ARRAY": "ARRAY",
-    "OBJECT": "OBJECT",
-}
 
 
 def _resolve_file_links(text: str, md_dir: Path) -> str:
@@ -64,7 +54,7 @@ def _parse_skills_md(md_path: Path) -> tuple[str, list[dict]]:
 
     Returns:
         (system_prompt, tool_defs) where each tool_def is a dict with keys:
-        name, description, parameters (list of {name, type, required, description}).
+        name, description, input_schema (a JSON Schema object).
     """
     text = md_path.read_text()
 
@@ -96,58 +86,34 @@ def _parse_skills_md(md_path: Path) -> tuple[str, list[dict]]:
             tool_name = lines[0].strip()
             tool_body = lines[1].strip() if len(lines) > 1 else ""
 
-            # Description: everything before **Parameters:**
-            params_match = re.search(r"\*\*Parameters:\*\*", tool_body)
-            if params_match:
-                description = tool_body[: params_match.start()].strip()
-                params_section = tool_body[params_match.end() :]
+            # Extract JSON Schema from fenced ```json code block
+            schema_match = re.search(r"```json\s*\n(.*?)\n```", tool_body, re.DOTALL)
+            if schema_match:
+                description = tool_body[: schema_match.start()].strip()
+                # Remove trailing **Input Schema:** label if present
+                description = re.sub(r"\*\*Input Schema:\*\*\s*$", "", description).strip()
+                input_schema = json.loads(schema_match.group(1))
             else:
                 description = tool_body.strip()
-                params_section = ""
+                input_schema = {"type": "object", "properties": {}, "required": []}
 
-            # Parse parameter table rows: | name | TYPE | yes/no | description |
-            parameters = []
-            for row_match in re.finditer(r"\|\s*(\w+)\s*\|\s*(\w+)\s*\|\s*(yes|no)\s*\|\s*(.+?)\s*\|", params_section):
-                param_name = row_match.group(1)
-                param_type = row_match.group(2).upper()
-                required = row_match.group(3).lower() == "yes"
-                param_desc = row_match.group(4).strip()
-                parameters.append(
-                    {"name": param_name, "type": param_type, "required": required, "description": param_desc}
-                )
-
-            tool_defs.append({"name": tool_name, "description": description, "parameters": parameters})
+            tool_defs.append(
+                {
+                    "name": tool_name,
+                    "description": description,
+                    "input_schema": input_schema,
+                }
+            )
 
     return system_prompt_section, tool_defs
 
 
-def _tool_defs_to_declarations(tool_defs: list[dict]) -> list[types.FunctionDeclaration]:
-    """Convert parsed tool definitions into Gemini FunctionDeclaration objects."""
-    declarations = []
-    for tool_def in tool_defs:
-        properties = {}
-        required = []
-        for param in tool_def["parameters"]:
-            schema_type = _TYPE_MAP.get(param["type"], "STRING")
-            properties[param["name"]] = types.Schema(type=schema_type, description=param["description"])
-            if param["required"]:
-                required.append(param["name"])
-
-        decl = types.FunctionDeclaration(
-            name=tool_def["name"],
-            description=tool_def["description"],
-            parameters=types.Schema(type="OBJECT", properties=properties, required=required),
-        )
-        declarations.append(decl)
-    return declarations
-
-
 class GraphRAGSearchSkills:
-    """Encapsulates Gemini function-calling tools for querying a GraphRAG.
+    """Encapsulates Claude tool-use definitions for querying a GraphRAG.
 
     Skill definitions are loaded from ``graph_rag_search_skills.md`` next to this file.
     The markdown contains the system prompt text and a ``## Tools`` section with one
-    ``### tool_name`` subsection per tool, each with a parameter table.
+    ``### tool_name`` subsection per tool, each with a JSON Schema block.
 
     Args:
         graph_rag: An initialized ``BaseGraphRAG`` instance.
@@ -167,7 +133,6 @@ class GraphRAGSearchSkills:
         # Load and parse the markdown skill definitions
         md_path = Path(skills_md_path) if skills_md_path else _SKILLS_MD_PATH
         self._system_prompt_template, self._tool_defs = _parse_skills_md(md_path)
-        self._declarations = _tool_defs_to_declarations(self._tool_defs)
 
         # Registry mapping function name → handler method
         self._handlers: dict[str, callable] = {
@@ -185,20 +150,20 @@ class GraphRAGSearchSkills:
         """Return the system prompt (file links already resolved at parse time)."""
         return self._system_prompt_template
 
-    def get_tools(self) -> list[types.Tool]:
-        """Return the ``tools`` list to pass to ``GenerateContentConfig``."""
-        return [types.Tool(function_declarations=self._declarations)]
+    def get_tools(self) -> list[dict]:
+        """Return tool definitions compatible with Claude's tool use API."""
+        return self._tool_defs
 
     def execute(self, fn_name: str, fn_args: dict, query_text: str = "") -> dict:
         """Dispatch a function call to the appropriate handler.
 
         Args:
-            fn_name: The function name from ``function_call_part.function_call.name``.
-            fn_args: The arguments dict from ``function_call_part.function_call.args``.
+            fn_name: The function name from the ``tool_use`` content block ``name``.
+            fn_args: The arguments dict from the ``tool_use`` content block ``input``.
             query_text: The original user query (used by visualization).
 
         Returns:
-            A dict suitable for ``types.Part.from_function_response(response=...)``.
+            A dict suitable for a Claude ``tool_result`` content block.
         """
         handler = self._handlers.get(fn_name)
         if handler is None:

@@ -10,9 +10,6 @@ def main():
     config_path = Path(__file__).parent.parent.parent / "config" / "floor_graph_config.yaml"
     args = OmegaConf.load(config_path.as_posix())
     bag_path = Path(args.bag_path)
-    annotation_dir = bag_path.parent / "qwen3vl_annotations_fast_8b"
-    rgb_dir = bag_path.parent / "rgb"
-    rgb_paths = sorted(list(rgb_dir.iterdir()))
 
     graph_rag_path = bag_path.parent / "graph_rag_new"
     graph_rag = BaseGraphRAG(graph_rag_path.as_posix(), embedding_model_name="BAAI/bge-m3")

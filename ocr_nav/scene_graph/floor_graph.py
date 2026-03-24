@@ -525,7 +525,7 @@ class FloorGraph:
         """
         with open(graph_path, "r") as f:
             graph_json = json.load(f)
-        self.floor_graph = nx.node_link_graph(graph_json)
+        self.floor_graph = nx.node_link_graph(graph_json, edges="links")
         return self.floor_graph
 
     def compute_grid_parameters(self, full_pc: o3d.geometry.PointCloud, voxel_res: float = 0.05) -> None:

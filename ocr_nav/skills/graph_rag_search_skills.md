@@ -46,44 +46,82 @@ avoid outputing these to the LLM.
 Execute a Cypher query against the Kuzu graph database and return the results.
 Use this to query the graph for nodes, relationships, and properties.
 
-**Parameters:**
-
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| query | STRING | yes | The Cypher query string to execute against the Kuzu graph database |
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "The Cypher query string to execute against the Kuzu graph database"
+    }
+  },
+  "required": ["query"]
+}
+```
 
 ### execute_python_code
 
 Execute Python code that interacts with the `graph_rag` object (a `BaseGraphRAG` instance).
 The code has access to a `graph_rag` variable. Store the result in a variable named `retrieval_result`.
 
-**Parameters:**
-
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| code | STRING | yes | The Python code to execute. Must store output in a variable named `retrieval_result`. |
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string",
+      "description": "The Python code to execute. Must store output in a variable named `retrieval_result`."
+    }
+  },
+  "required": ["code"]
+}
+```
 
 ### semantic_search_in_graph
 
 Perform a semantic search in the graph using the provided query text.
 Use the graph_rag's built-in retrieval methods to find relevant nodes and relationships.
 
-**Parameters:**
-
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| query | STRING | yes | The query text to perform semantic search in the graph. |
-| top_k | INTEGER | yes | The number of top results to return from the semantic search. |
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "The query text to perform semantic search in the graph."
+    },
+    "top_k": {
+      "type": "integer",
+      "description": "The number of top results to return from the semantic search."
+    }
+  },
+  "required": ["query", "top_k"]
+}
+```
 
 ### visualize_nodes_edges
 
-Visualize the results of a graph RAG query. This function takes the query text, the retrieved node list defined as a list of tuples (node type, node id), and the related edges defined as a list of tuples (source node type, source node id, relationship type, target node type, target node id), 
+Visualize the results of a graph RAG query. This function takes the query text, the retrieved node list defined as a list of tuples (node type, node id), and the related edges defined as a list of tuples (source node type, source node id, relationship type, target node type, target node id),
 and generates a visual representation of the graph RAG query results. When the visualized node type is object, remember to also add its
 related nodes into the graph.
 
-**Parameters:**
-
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| node_list | list | yes | The list of nodes retrieved from the graph RAG query. Each element is a tuple of (node_type: STRING, node_id: INTEGER). |
-| edge_list | list | yes | The list of edges connecting the retrieved nodes. Each element is a tuple of (source_node_type: STRING, source_node_id: INTEGER, rel_type: STRING, target_node_type: STRING, target_node_id: INTEGER). |
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "node_list": {
+      "type": "string",
+      "description": "The list of nodes retrieved from the graph RAG query. A Python literal for a list of tuples, e.g. [(\"Object\", 1), (\"Frame\", 2)]. Each tuple is (node_type, node_id)."
+    },
+    "edge_list": {
+      "type": "string",
+      "description": "The list of edges connecting the retrieved nodes. A Python literal for a list of tuples, e.g. [(\"Object\", 1, \"IN_FRAME\", \"Frame\", 2)]. Each tuple is (source_node_type, source_node_id, rel_type, target_node_type, target_node_id)."
+    }
+  },
+  "required": ["node_list", "edge_list"]
+}
+```

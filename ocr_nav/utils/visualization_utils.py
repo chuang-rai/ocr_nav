@@ -194,3 +194,8 @@ def visualize_masks_on_image(image: np.ndarray, masks: np.ndarray, alpha: float 
         color_mask[mask > 0] = color_list[i % len(color_list)]
     blended_image = cv2.addWeighted(image, 1 - alpha, color_mask, alpha, 0)
     return blended_image
+
+
+def paint_pc_uniform_color(pc: o3d.geometry.PointCloud, color: list[float]) -> o3d.geometry.PointCloud:
+    pc.colors = o3d.utility.Vector3dVector(np.full((len(pc.points), 3), color))
+    return pc

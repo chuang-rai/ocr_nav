@@ -2,6 +2,8 @@
 bag_path: /home/chuang/hcg/projects/control_suite/temp/lab_downstairs_test_2/rosbag2_2026_02_02-17_46_19_perception_suite_fix_trimmed_glim
 output_dir: /home/chuang/hcg/projects/control_suite/temp/lab_downstairs_test_2/
 cache_dir: /home/chuang/hcg/projects/control_suite/temp/lab_downstairs_test_2/floor_graph_cache
+output_graph_name: glim_map_fused_navigation_graph # name of the output floor graph file (without extension)
+vlm_config_name: qwen3_vl.yaml           # name of the VLM config file under <package_root>/config/vlm subdirectory
 voxel_size: 0.1                          # the voxel size for downsampling the point cloud and constructing the floor graph
 cache_segmentation: true                 # whether to cache the segmentation results
 floor_seg_resolution: 0.1                # the bin size for floor height histogram

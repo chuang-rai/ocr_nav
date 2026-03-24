@@ -42,6 +42,7 @@ lint.extend-select = [
 # if any of the specific rules become problematic we can disable them selectively here
 lint.ignore = [
   "UP015",  # keep redundant "r" mode in open(): https://docs.astral.sh/ruff/rules/redundant-open-modes/
+  "F401",
 ]
 
 # jupyter notebook file type specific overrides, we are much less strict on notebooks and allow a lot
