@@ -50,7 +50,6 @@ class DeepseekOCRProcessingInfo(BaseProcessingInfo):
         return {"image": None}
 
     def get_num_image_tokens(self, *, image_width: int, image_height: int, cropping: bool = True) -> int:
-        hf_processor = self.get_hf_processor()
 
         # image_size = hf_processor.image_size
         # patch_size = hf_processor.patch_size
@@ -240,7 +239,6 @@ class DeepseekOCRForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
         super().__init__()
 
         config: DeepseekVLV2Config = vllm_config.model_config.hf_config
-        quant_config = vllm_config.quant_config
         multimodal_config = vllm_config.model_config.multimodal_config
 
         # config.model_type ='deepseek_vl_v2'

@@ -47,7 +47,6 @@ def visualize_graphrag(graph_rag: BaseGraphRAG, root_path: str | Path, show_img:
     node_types = graph_rag.get_existing_node_types()
     edge_types = graph_rag.get_existing_rel_types()
     net = Network(height="1080px", width="100%", bgcolor="#222222", font_color="white")
-    added_node_ids_set = set()
     for node_type in node_types:
         nodes = graph_rag.get_all_nodes_of_type(node_type)
         print(f"Node type: {node_type}, Number of nodes: {len(nodes)}")
@@ -120,10 +119,7 @@ def visualize_graphrag_query_result(
     query_result_dir = root_path / "query_results" / query_text_str
     os.makedirs(query_result_dir, exist_ok=True)
     # traverse through all the node types
-    node_types = graph_rag.get_existing_node_types()
-    edge_types = graph_rag.get_existing_rel_types()
     net = Network(height="1080px", width="100%", bgcolor="#222222", font_color="white")
-    added_node_ids_set = set()
     same_node_edge_map = {}
     for obj_node in query_result_obj_nodes:
         net.add_node(
@@ -136,7 +132,8 @@ def visualize_graphrag_query_result(
         for obj_rel_tuple in obj_rel_tuples:
             if obj_rel_tuple[1]["_label"] == "IsSame":
                 print(
-                    f"Found IsSame relationship between Object_{obj_rel_tuple[0]['id']} and Object_{obj_rel_tuple[2]['id']}"
+                    f"Found IsSame relationship between Object_{obj_rel_tuple[0]['id']} "
+                    f"and Object_{obj_rel_tuple[2]['id']}"
                 )
                 same_node_edge_map[obj_rel_tuple[0]["id"]] = obj_rel_tuple[2]["id"]
                 continue
@@ -188,10 +185,12 @@ def visualize_graphrag_query_result(
             )
         try:
             net.add_edge("Object_" + str(src_id), "Object_" + str(tar_id), color="red", title="IsSame")
-        except:
+        except Exception as e:
             print(
-                f"Failed to add IsSame edge between Object_{src_id} and Object_{tar_id}. They might already be connected with another IsSame edge."
+                f"Failed to add IsSame edge between Object_{src_id} and Object_{tar_id}. "
+                f"They might already be connected with another IsSame edge."
             )
+            print(e)
             pass
 
     net.show_buttons(filter_=["physics"])

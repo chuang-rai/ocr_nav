@@ -198,11 +198,11 @@ def associate_fragments(
 ):
     id_map = {}
     print(
-        f"Trying to associate fragments {to_be_associated_ids_list} with historical fragments in the global fragment associator..."
+        f"Trying to associate fragments {to_be_associated_ids_list} with historical "
+        f"fragments in the global fragment associator..."
     )
     for i in range(len(to_be_associated_ids_list)):
         to_be_associated_id = to_be_associated_ids_list[i]
-        # to_be_associated_pc = copy.deepcopy(global_fragment_associator.global_fragment_pc_history[to_be_associated_id])
         associated_id = global_fragment_associator.associate_fragment_with_id(
             to_be_associated_id, early_stop_threshold=early_stop_iou_threshold
         )
@@ -518,7 +518,8 @@ def main():
             )  # check if the associated object still exists in the graph
 
             print(
-                f"Trying to associate lost track object {src_node['labels']} {src_id} with fragment, got associated fragment id {associated_node['labels']} {associated_id}"
+                f"Trying to associate lost track object {src_node['labels']} {src_id} with fragment, "
+                f"got associated fragment id {associated_node['labels']} {associated_id}"
             )
             graph_rag.add_relationship(
                 "IsSame",

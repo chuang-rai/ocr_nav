@@ -115,7 +115,6 @@ def main():
     node = Node("traversable_graph_visualizer")
     publisher = node.create_publisher(MarkerArray, "traversable_graph_markers", 10)
     publisher.publish(marker_array)
-    timer = node.create_timer(2.0, lambda: publisher.publish(marker_array))
 
     print("Publishing graph every 2 seconds. Press Ctrl+C to stop.")
     try:

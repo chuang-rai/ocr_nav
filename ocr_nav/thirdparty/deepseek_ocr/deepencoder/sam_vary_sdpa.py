@@ -407,7 +407,7 @@ def add_decomposed_rel_pos(
 ) -> torch.Tensor:
     """
     Calculate decomposed Relative Positional Embeddings from :paper:`mvitv2`.
-    https://github.com/facebookresearch/mvit/blob/19786631e330df9f3622e5402b4a419a263a2c80/mvit/models/attention.py   # noqa B950
+    https://github.com/facebookresearch/mvit/blob/19786631e330df9f3622e5402b4a419a263a2c80/mvit/models/attention.py
     Args:
         q (Tensor): query q in the attention layer with shape (B, q_h * q_w, C).
         rel_pos_h (Tensor): relative position embeddings (Lh, C) for height axis.
@@ -487,7 +487,6 @@ def _build_sam(
     prompt_embed_dim = 256
     image_size = 1024
     vit_patch_size = 16
-    image_embedding_size = image_size // vit_patch_size
     image_encoder = ImageEncoderViT(
         depth=encoder_depth,
         embed_dim=encoder_embed_dim,
@@ -506,12 +505,6 @@ def _build_sam(
     if checkpoint is not None:
         # with open(checkpoint, "rb") as f:
         state_dict = torch.load(checkpoint)
-        # print(state_dict.keys())
-        # for key in state_dict:
-        # image_encoder.load_state_dict({k[14:]: v for k, v in state_dict.items() if 'image_encoder' in k}, strict=False)
-        # ocr-anyting
-        # image_encoder.load_state_dict(state_dict, strict=True)
-        # tob
         image_encoder.load_state_dict(
             {k[30:]: v for k, v in state_dict.items() if "vision_tower_high" in k}, strict=True
         )

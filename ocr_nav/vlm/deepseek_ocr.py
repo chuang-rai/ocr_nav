@@ -10,7 +10,6 @@ from vllm.model_executor.models.deepseek_ocr import NGramPerReqLogitsProcessor
 
 class DeepSeekOCRvLLMQueryInterface:
     def __init__(self, model_name: str = "deepseek-ai/DeepSeek-OCR"):
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
         os.environ["OMP_NUM_THREADS"] = "1"
 

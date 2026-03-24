@@ -56,7 +56,8 @@ def project_points(pc: np.ndarray, intrinsics: np.ndarray, w: int, h: int) -> tu
         h (int): Image height.
 
     Returns:
-        Tuple[np.ndarray, np.ndarray, np.ndarray]: (N, 2) 2D projected points, (N,) depth values, (N, 3) filtered 3D points
+        Tuple[np.ndarray, np.ndarray, np.ndarray]: (N, 2) 2D projected points,
+        (N,) depth values, (N, 3) filtered 3D points
         that can be projected into the image region in camera frame.
     """
     # filter points behind the camera

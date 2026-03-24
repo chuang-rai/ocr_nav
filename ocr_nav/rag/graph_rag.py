@@ -229,14 +229,14 @@ class SimpleObjectFrameGraphRAG(BaseGraphRAG):
         self.obj_id = 0
 
     def _create_schema(self):
-        tables = [
-            "CREATE NODE TABLE Frame(id INT64, timestamp STRING, caption STRING, PRIMARY KEY (id))",  # SigLIP2 image embedding size is 1152
+        tables = [  # SigLIP2 image embedding size is 1152
+            "CREATE NODE TABLE Frame(id INT64, timestamp STRING, caption STRING, PRIMARY KEY (id))",
             """
             CREATE NODE TABLE Object(
                 id INT64,
-                label STRING, 
-                attributes STRING[], 
-                embedding FLOAT[1024], 
+                label STRING,
+                attributes STRING[],
+                embedding FLOAT[1024],
                 bbox INT64[4],
                 PRIMARY KEY (id)
             )
@@ -257,7 +257,8 @@ class SimpleObjectFrameGraphRAG(BaseGraphRAG):
         try:
             self.connection.execute("LOAD EXTENSION vector")
             self.connection.execute(
-                "CALL CREATE_VECTOR_INDEX('Object', 'object_embeddings_idx', 'embedding', metric:='cosine', mu:=16, efc:=200)"
+                "CALL CREATE_VECTOR_INDEX('Object', 'object_embeddings_idx', "
+                "'embedding', metric:='cosine', mu:=16, efc:=200)"
             )
             print("Index created successfully.")
         except Exception as e:

@@ -76,9 +76,11 @@ def draw_bounding_boxes(image: Image.Image, refs: list[tuple[str, str, str]], ou
                         )
 
                         draw.text((text_x, text_y), label_type, font=font, fill=color)
-                    except:
+                    except Exception as e:
+                        print(e)
                         pass
-        except:
+        except Exception as e:
+            print(e)
             continue
     img_draw.paste(overlay, (0, 0), overlay)
     return img_draw

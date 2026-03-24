@@ -169,7 +169,8 @@ class DeepseekOCRProcessor(ProcessorMixin):
         # special_tokens = ['<|ref|>', '<|/ref|>', '<|det|>', '<|/det|>', '<|grounding|>']
         # special_tokens_dict = {"additional_special_tokens": special_tokens}
 
-        # special_tokens = ['<image>','<|ref|>', '<|/ref|>', '<|det|>', '<|/det|>', '<|grounding|>', '<td>', '</td>', '<tr>', '</tr>']
+        # special_tokens = ['<image>','<|ref|>', '<|/ref|>', '<|det|>', '<|/det|>',
+        # '<|grounding|>', '<td>', '</td>', '<tr>', '</tr>']
         # special_tokens_dict = {"additional_special_tokens": special_tokens}
         # self.tokenizer.add_special_tokens(special_tokens_dict)
 
@@ -266,8 +267,6 @@ class DeepseekOCRProcessor(ProcessorMixin):
         """
 
         assert prompt is not None and images is not None, "prompt and images must be used at the same time."
-
-        sft_format = prompt
 
         input_ids, pixel_values, images_crop, images_seq_mask, images_spatial_crop, num_image_tokens, _ = images[0]
 
@@ -444,7 +443,8 @@ class DeepseekOCRProcessor(ProcessorMixin):
             images_seq_mask = images_seq_mask + [False]
 
         assert len(tokenized_str) == len(images_seq_mask), (
-            f"tokenize_with_images func: tokenized_str's length {len(tokenized_str)} is not equal to imags_seq_mask's length {len(images_seq_mask)}"
+            f"tokenize_with_images func: tokenized_str's length {len(tokenized_str)} "
+            f"is not equal to imags_seq_mask's length {len(images_seq_mask)}"
         )
 
         masked_tokenized_str = []

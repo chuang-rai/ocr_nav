@@ -361,7 +361,6 @@ class VitModel(nn.Module):
         self.transformer = NoTPTransformer(cfg=cfg)
 
         if cfg.get("fp32norm", False):
-            logger.info("Load fp32 layernorm for ViT.")
             self.pre_layrnorm = LayerNormfp32(
                 cfg.hidden_size,
                 eps=cfg.get("pre_layernorm_epsilon", 1e-5),
