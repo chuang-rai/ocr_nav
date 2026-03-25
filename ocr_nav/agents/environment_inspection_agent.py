@@ -4,13 +4,15 @@ from pathlib import Path
 
 import numpy as np
 import open3d as o3d
-from matplotlib import colors
 from pydantic_ai import Agent, RunContext
+from pydantic_ai.builtin_tools import WebFetchTool, WebSearchTool
 from termcolor import cprint
 from tqdm import tqdm
 
 from ocr_nav.agents.graph_rag_search_agent import GraphRAGDeps
 from ocr_nav.agents.graph_rag_search_agent import build_agent as build_graph_rag_search_agent
+from ocr_nav.agents.web_search_agent import WebSearchDeps
+from ocr_nav.agents.web_search_agent import build_agent as build_web_agent
 from ocr_nav.rag.graph_rag import BaseGraphRAG
 from ocr_nav.scene_graph.floor_graph import FloorGraph
 from ocr_nav.skills.graph_rag_search_skills import _parse_skills_md
@@ -49,7 +51,7 @@ def build_agent(model_name: str = "google-gla:gemini-3.1-flash-lite-preview") ->
     )
 
     @agent.tool
-    async def search_object_pos(ctx: RunContext[EnvInspectionDeps], query: str) -> str:
+    async def search_object_pos(ctx: RunContext[EnvInspectionDeps], query: str) -> tuple[str, int]:
         """Search for an object in the graph and return its position as a potential goal for nav_to function."""
         graph_rag_agent = build_graph_rag_search_agent(ctx.deps.graph_rag, model_name)
 
@@ -78,14 +80,14 @@ def build_agent(model_name: str = "google-gla:gemini-3.1-flash-lite-preview") ->
         pc = o3d.io.read_point_cloud(obj_pc_path.as_posix())
         central_pos = np.mean(np.array(pc.points), axis=0)
         cprint(f"Object {obj_id} central position: {central_pos}", "green")
-        return str(central_pos.tolist())
+        return str(central_pos.tolist()), obj_id
 
     # -- Tool definitions ------------------------------------------------ #
 
     @agent.tool
     def nav_to(ctx: RunContext[EnvInspectionDeps], goal_pos: tuple[float, float, float], obj_id: int) -> str:
         """Navigate to a goal position in the environment."""
-        cprint(f"Going to goal position: {goal_pos}", "cyan")
+        cprint(f"Going to goal object {obj_id} at position: {goal_pos}", "cyan")
         floor_graph = ctx.deps.floor_graph
         start_pos = np.array(ctx.deps.current_position)
         goal_pos = np.array(goal_pos)
@@ -99,7 +101,9 @@ def build_agent(model_name: str = "google-gla:gemini-3.1-flash-lite-preview") ->
         plotter = create_plotter()
         obj_pc_path = ctx.deps.graph_rag.kuzu_db_dir / "object_point_clouds" / f"object_{obj_id:05d}.ply"
         pc = o3d.io.read_point_cloud(obj_pc_path.as_posix())
-        plotter = draw_point_cloud(plotter, np.asarray(pc.points), color="orange", point_size=5.0)
+        print(pc)
+        colors = np.repeat(np.array([255, 0, 0]), len(pc.points)).reshape(-1, 3)
+        plotter = draw_point_cloud(plotter, np.asarray(pc.points), color=colors, point_size=5.0)
         for edge in tqdm(floor_graph.floor_graph.edges()):
             src, tar = edge
             src_pos = floor_graph.floor_graph.nodes[src]["pos"]
@@ -127,6 +131,66 @@ def build_agent(model_name: str = "google-gla:gemini-3.1-flash-lite-preview") ->
             plotter.update()
         plotter.show()
 
+        ctx.deps.current_position = goal_pos  # update current position after navigation
+
         return str(path_pos)
+
+    # @agent.tool
+    # async def web_search(ctx: RunContext[EnvInspectionDeps], query: str) -> str:
+    #     """Search the web for information relevant to the query."""
+    #     web_agent = Agent(
+    #         model_name,
+    #         system_prompt="You are a web search assistant. Search the web and return a concise summary of the results.",
+    #         builtin_tools=[WebSearchTool()],
+    #     )
+    #     result = await web_agent.run(query)
+    #     return result.output
+
+    # @agent.tool
+    # async def web_search(ctx: RunContext[EnvInspectionDeps], query: str) -> str:
+    #     """
+    #     Search the web for real-time information.
+    #     Use this for train schedules, weather, or live data.
+    #     """
+    #     # Define the search assistant with stricter instructions
+    #     search_instructions = (
+    #         "You are a precise search retriever. Your goal is to find actual "
+    #         "times, prices, or schedules. Do not just list websites; visit them "
+    #         "using your tools and summarize the specific findings for the user."
+    #         "You can fetch website and extract information using the WebFetchTool."
+    #     )
+
+    #     web_agent = Agent(
+    #         model_name,  # Reuse the same model
+    #         system_prompt=search_instructions,
+    #         # Ensure the builtin tool is properly configured (e.g., Tavily or DuckDuckGo)
+    #         builtin_tools=[WebSearchTool(), WebFetchTool()],
+    #     )
+
+    #     # Run the search
+    #     result = await web_agent.run(query)
+    #     return result.output
+
+    @agent.tool
+    async def browse_web(ctx: RunContext[EnvInspectionDeps], query: str, url: str = "") -> str:
+        """Browse a website interactively using a headless browser.
+
+        Use this when you need to fill forms, click buttons, or interact
+        with a web page (e.g. searching train schedules on sbb.ch).
+        For simple factual queries prefer ``web_search`` instead.
+
+        Args:
+            query: What information to find on the page.
+            url: Optional starting URL. If empty the browser agent decides.
+        """
+
+        browse_agent = build_web_agent(model_name)
+        deps = WebSearchDeps(query_text=query)
+        prompt = query if not url else f"Go to {url} and {query}"
+        try:
+            result = await browse_agent.run(prompt, deps=deps)
+            return result.output
+        finally:
+            await deps.cleanup()
 
     return agent

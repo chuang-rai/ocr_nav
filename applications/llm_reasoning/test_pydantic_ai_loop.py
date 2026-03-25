@@ -25,25 +25,6 @@ def main():
     graph_rag = BaseGraphRAG(graph_rag_path.as_posix(), embedding_model_name="BAAI/bge-m3")
     floor_graph = FloorGraph(args.voxel_size)
     floor_graph.load_floor_graph(Path(args.output_dir) / f"{args.output_graph_name}.json")
-    # print("Plotting voronoi graphs...")
-    # for edge in tqdm(floor_graph.floor_graph.edges()):
-    #     src, tar = edge
-    #     src_pos = floor_graph.floor_graph.nodes[src]["pos"]
-    #     tar_pos = floor_graph.floor_graph.nodes[tar]["pos"]
-    #     line = draw_line(
-    #         np.array([src_pos[0], src_pos[1], src_pos[2]]),
-    #         np.array([tar_pos[0], tar_pos[1], tar_pos[2]]),
-    #     )
-    #     plotter.add_mesh(line, line_width=4, color="green", render_lines_as_tubes=True)
-    # for node in tqdm(floor_graph.floor_graph.nodes()):
-    #     node_pos = floor_graph.floor_graph.nodes[node]["pos"]
-    #     sphere = draw_sphere(
-    #         np.array([node_pos[0], node_pos[1], node_pos[2]]),
-    #         radius=0.1,
-    #     )
-    #     plotter.add_mesh(sphere, color="green")
-
-    # plotter.show()
 
     # Read the Gemini model name from the existing config and map to PydanticAI format
     gemini_config_path = config_dir / "vlm" / "gemini_plus.yaml"
